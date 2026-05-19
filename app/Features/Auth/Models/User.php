@@ -13,21 +13,36 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $fillable = [
-        'name',
+        'nom',
         'email',
-        'password',
+        'mot_de_passe',
+        'api_token',
     ];
 
     protected $hidden = [
-        'password',
-        'remember_token',
+        'mot_de_passe',
+        'token_souvenir',
+        'api_token',
     ];
+
+    /**
+     * Indique à Laravel quel champ correspond au mot de passe.
+     */
+    public function getAuthPassword(): string
+    {
+        return $this->getAttributes()['mot_de_passe'] ?? '';
+    }
+
+    public function getAuthPasswordName(): string
+    {
+        return 'mot_de_passe';
+    }
 
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'email_verifie' => 'datetime',
+            'mot_de_passe'  => 'hashed',
         ];
     }
 }

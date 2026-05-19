@@ -1,17 +1,4 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
-
-Route::get('/', function () {
-    return Inertia::render('welcome');
-})->name('home');
-
-Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', function () {
-        return Inertia::render('dashboard');
-    })->name('dashboard');
-});
-
-require __DIR__.'/../app/Features/Auth/Routes/settings.php';
-require __DIR__.'/../app/Features/Auth/Routes/auth.php';
+// All authentication is handled via the API (routes/api.php).
+// Web routes and Blade/Inertia views are disabled.

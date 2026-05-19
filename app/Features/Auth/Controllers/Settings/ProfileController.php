@@ -4,51 +4,41 @@ namespace App\Features\Auth\Controllers\Settings;
 
 use App\Features\Auth\Requests\Settings\ProfileUpdateRequest;
 use App\Http\Controllers\Controller;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    public function edit(Request $request): Response
+    public function show(Request $request): JsonResponse
     {
-        return Inertia::render('settings/profile', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => $request->session()->get('status'),
-        ]);
+        return response()->json($request->user());
     }
 
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function update(ProfileUpdateRequest $request): JsonResponse
     {
         $request->user()->fill($request->validated());
 
         if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+            $request->user()->email_verifie = null;
         }
 
         $request->user()->save();
 
-        return to_route('profile.edit');
+        return response()->json($request->user());
     }
 
-    public function destroy(Request $request): RedirectResponse
+    public function destroy(Request $request): JsonResponse
     {
         $request->validate([
-            'password' => ['required', 'current_password'],
+            'mot_de_passe' => ['required', 'current_password'],
         ]);
 
         $user = $request->user();
 
         Auth::logout();
-
         $user->delete();
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return redirect('/');
+        return response()->json(['message' => 'Compte supprimé avec succès.']);
     }
 }
