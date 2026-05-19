@@ -1,5 +1,5 @@
 <?php
 
 return [
-    App\Providers\AppServiceProvider::class,
+    App\Features\Auth\Providers\AuthServiceProvider::class,
 ];
