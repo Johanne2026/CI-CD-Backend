@@ -16,18 +16,14 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'nom'           => fake()->name(),
-            'email'         => fake()->unique()->safeEmail(),
-            'email_verifie' => now(),
-            'mot_de_passe'  => static::$password ??= Hash::make('password'),
-            'token_souvenir' => Str::random(10),
+            'nom'                 => fake()->lastName(),
+            'prenom'              => fake()->firstName(),
+            'username_outil_cicd' => fake()->unique()->userName(),
+            'mot_de_passe'        => static::$password ??= Hash::make('password'),
+            'api_token'           => null,
+            'token_outil_cicd'    => null,
+            'date_inscription'    => now(),
+            'role'                => fake()->randomElement(['administrateur', 'administrateur_cloud_doi', 'securite']),
         ];
-    }
-
-    public function unverified(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'email_verifie' => null,
-        ]);
     }
 }

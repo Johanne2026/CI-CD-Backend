@@ -8,14 +8,16 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table) {
+        Schema::create('Utilisateurs', function (Blueprint $table) {
             $table->id();
             $table->string('nom');
-            $table->string('email')->unique();
-            $table->timestamp('email_verifie')->nullable();
+            $table->string('prenom');
+            $table->string('username_outil_cicd')->unique()->comment("Nom d'utilisateur GitHub");
             $table->string('mot_de_passe');
             $table->string('api_token', 64)->unique()->nullable();
-            $table->rememberToken()->name('token_souvenir');
+            $table->string('token_outil_cicd')->nullable()->comment('Token GitHub fourni à la connexion');
+            $table->timestamp('date_inscription')->nullable()->comment("Date d'inscription sur la plateforme");
+            $table->enum('role', ['administrateur', 'administrateur_cloud_doi', 'securite'])->default('securite');
             $table->timestamps();
         });
 
@@ -37,7 +39,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('users');
+        Schema::dropIfExists('Utilisateurs');
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }

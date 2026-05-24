@@ -1,46 +1,42 @@
-# Auth API — Guide d'intégration Frontend
+# Auth API — Documentation Backend
 
-Ce document décrit comment connecter un frontend au backend Laravel via l'API d'authentification Sanctum.
+Ce document décrit les endpoints d'authentification exposés par ce backend Laravel.
 
 ---
 
-## Configuration requise
+## Table en base de données
 
-### Variable d'environnement
+**Nom :** `Utilisateurs`
 
-Dans le fichier `.env` du backend, l'URL du frontend doit être déclarée :
+| Colonne | Type | Description |
+|---|---|---|
+| `id` | bigint | Clé primaire auto-incrémentée |
+| `nom` | string | Nom de l'utilisateur |
+| `prenom` | string | Prénom de l'utilisateur |
+| `username_outil_cicd` | string unique | Nom d'utilisateur GitHub |
+| `mot_de_passe` | string | Mot de passe hashé (bcrypt) |
+| `api_token` | string(64) nullable | Token d'authentification API (haché SHA-256) |
+| `token_outil_cicd` | string nullable | Token GitHub fourni à la connexion |
+| `date_inscription` | timestamp | Date d'inscription sur la plateforme |
+| `role` | enum | `administrateur`, `administrateur_cloud_doi`, `securite` |
+| `created_at` / `updated_at` | timestamp | Géré automatiquement par Laravel |
 
-```env
-FRONTEND_URL=http://localhost:5173
-CORS_ALLOWED_ORIGINS=http://localhost:5173
-```
+---
 
-En production, remplace ces valeurs par l'URL réelle du frontend. Si tu as plusieurs origines :
-
-```env
-CORS_ALLOWED_ORIGINS=https://monapp.com,https://staging.monapp.com
-```
-
-### URL de base de l'API
-
-Toutes les requêtes pointent vers :
+## URL de base
 
 ```
 http://localhost:8000/api
 ```
 
----
-
 ## Headers obligatoires
-
-Toutes les requêtes doivent inclure :
 
 ```
 Accept: application/json
 Content-Type: application/json
 ```
 
-Pour les routes protégées, ajoute également :
+Routes protégées :
 
 ```
 Authorization: Bearer <token>
@@ -50,94 +46,107 @@ Authorization: Bearer <token>
 
 ## Endpoints
 
-### POST /api/register
-
-Crée un compte et retourne un token.
+### POST /api/register — Inscription
 
 **Body :**
 ```json
 {
-  "nom": "John Doe",
-  "email": "john@example.com",
+  "nom": "Doe",
+  "prenom": "John",
+  "username_outil_cicd": "johndoe-github",
   "mot_de_passe": "motdepasse123",
-  "mot_de_passe_confirmation": "motdepasse123"
+  "mot_de_passe_confirmation": "motdepasse123",
+  "role": "administrateur"
 }
 ```
 
 **Réponse 201 :**
 ```json
 {
-  "token": "1|abc123...",
+  "token": "abc123...",
+  "redirect_to": "/dashboard/admin",
   "user": {
     "id": 1,
-    "nom": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2026-05-19T10:00:00.000000Z",
-    "updated_at": "2026-05-19T10:00:00.000000Z"
+    "nom": "Doe",
+    "prenom": "John",
+    "username_outil_cicd": "johndoe-github",
+    "role": "administrateur",
+    "date_inscription": "2026-05-24T14:00:00.000000Z",
+    "created_at": "2026-05-24T14:00:00.000000Z",
+    "updated_at": "2026-05-24T14:00:00.000000Z"
   }
 }
 ```
 
 ---
 
-### POST /api/login
+### POST /api/login — Connexion
 
-Authentifie un utilisateur et retourne un token.
+La connexion se fait avec le `username_outil_cicd` (GitHub) et le mot de passe.
+Le `token_outil_cicd` (token GitHub) peut être fourni optionnellement.
 
 **Body :**
 ```json
 {
-  "email": "john@example.com",
-  "mot_de_passe": "motdepasse123"
+  "username_outil_cicd": "johndoe-github",
+  "mot_de_passe": "motdepasse123",
+  "token_outil_cicd": "ghp_xxxxxxxxxxxx"
 }
 ```
 
 **Réponse 200 :**
 ```json
 {
-  "token": "2|xyz456...",
+  "token": "xyz456...",
+  "redirect_to": "/dashboard/admin",
   "user": {
     "id": 1,
-    "nom": "John Doe",
-    "email": "john@example.com",
-    "created_at": "2026-05-19T10:00:00.000000Z",
-    "updated_at": "2026-05-19T10:00:00.000000Z"
+    "nom": "Doe",
+    "prenom": "John",
+    "username_outil_cicd": "johndoe-github",
+    "role": "administrateur",
+    "date_inscription": "2026-05-24T14:00:00.000000Z",
+    "created_at": "2026-05-24T14:00:00.000000Z",
+    "updated_at": "2026-05-24T14:00:00.000000Z"
   }
 }
 ```
 
-**Réponse 422 (credentials invalides) :**
+> `api_token`, `token_outil_cicd` et `mot_de_passe` sont exclus de toutes les réponses.
+
+**Réponse 422 — Credentials invalides :**
 ```json
 {
   "message": "These credentials do not match our records.",
   "errors": {
-    "email": ["These credentials do not match our records."]
+    "username_outil_cicd": ["These credentials do not match our records."]
   }
 }
 ```
 
 ---
 
-### GET /api/user — 🔒 Protégé
-
-Retourne l'utilisateur actuellement authentifié.
+### GET /api/user — Utilisateur connecté 🔒
 
 **Réponse 200 :**
 ```json
 {
   "id": 1,
-  "nom": "John Doe",
-  "email": "john@example.com",
-  "created_at": "2026-05-19T10:00:00.000000Z",
-  "updated_at": "2026-05-19T10:00:00.000000Z"
+  "nom": "Doe",
+  "prenom": "John",
+  "username_outil_cicd": "johndoe-github",
+  "role": "administrateur",
+  "date_inscription": "2026-05-24T14:00:00.000000Z",
+  "created_at": "2026-05-24T14:00:00.000000Z",
+  "updated_at": "2026-05-24T14:00:00.000000Z"
 }
 ```
 
 ---
 
-### POST /api/logout — 🔒 Protégé
+### POST /api/logout — Déconnexion 🔒
 
-Révoque le token actuel.
+Révoque le `api_token` et efface le `token_outil_cicd`.
 
 **Réponse 200 :**
 ```json
@@ -148,80 +157,43 @@ Révoque le token actuel.
 
 ---
 
-## Gestion du token côté frontend
+## Redirection par rôle
 
-1. Après login ou register, stocke le token retourné (`localStorage`, `sessionStorage`, ou store mémoire).
-2. Injecte-le dans chaque requête protégée via `Authorization: Bearer <token>`.
-3. À la déconnexion, appelle `POST /api/logout` puis supprime le token du stockage.
-
-### Exemple avec axios
-
-```js
-import axios from 'axios';
-
-const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
-  headers: { 'Accept': 'application/json' },
-});
-
-// Injecter le token automatiquement
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-// Register
-const { data } = await api.post('/register', {
-  nom: 'John Doe',
-  email: 'john@example.com',
-  mot_de_passe: 'motdepasse123',
-  mot_de_passe_confirmation: 'motdepasse123',
-});
-localStorage.setItem('token', data.token);
-
-// Login
-const { data } = await api.post('/login', {
-  email: 'john@example.com',
-  mot_de_passe: 'motdepasse123',
-});
-localStorage.setItem('token', data.token);
-
-// Logout
-await api.post('/logout');
-localStorage.removeItem('token');
-```
+| Rôle | `redirect_to` |
+|---|---|
+| `administrateur` | `/dashboard/admin` |
+| `administrateur_cloud_doi` | `/dashboard/cloud-doi` |
+| `securite` | `/dashboard/securite` |
 
 ---
 
-## Règles de validation
+## Règles de validation — register
 
-| Champ                       | Règles                                                  |
-|-----------------------------|---------------------------------------------------------|
-| `nom`                       | Requis, string, max 255 caractères                      |
-| `email`                     | Requis, email valide, unique, en minuscules             |
-| `mot_de_passe`              | Requis, min 8 caractères, doit être confirmé            |
-| `mot_de_passe_confirmation` | Requis, doit correspondre à `mot_de_passe`              |
+| Champ | Règles |
+|---|---|
+| `nom` | Requis, string, max 255 |
+| `prenom` | Requis, string, max 255 |
+| `username_outil_cicd` | Requis, string, max 255, unique dans `Utilisateurs` |
+| `mot_de_passe` | Requis, min 8 caractères, confirmé |
+| `mot_de_passe_confirmation` | Requis, identique à `mot_de_passe` |
+| `role` | Requis : `administrateur`, `administrateur_cloud_doi` ou `securite` |
 
-Les erreurs de validation retournent un statut **422** :
+## Règles de validation — login
 
-```json
-{
-  "message": "The nom field is required.",
-  "errors": {
-    "nom": ["The nom field is required."]
-  }
-}
-```
+| Champ | Règles |
+|---|---|
+| `username_outil_cicd` | Requis, string |
+| `mot_de_passe` | Requis, string |
+| `token_outil_cicd` | Optionnel, string |
 
 ---
 
-## Codes de statut HTTP
+## Codes HTTP
 
-| Code | Signification                             |
-|------|-------------------------------------------|
-| 200  | Succès                                    |
-| 201  | Ressource créée (register)                |
-| 401  | Non authentifié (token manquant/invalide) |
-| 422  | Erreur de validation                      |
-| 500  | Erreur serveur                            |
+| Code | Signification |
+|---|---|
+| `200` | Succès |
+| `201` | Ressource créée (register) |
+| `401` | Non authentifié — token absent ou invalide |
+| `422` | Erreur de validation |
+| `500` | Erreur serveur |

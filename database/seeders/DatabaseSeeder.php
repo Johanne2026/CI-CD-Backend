@@ -2,9 +2,10 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Features\Auth\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Carbon;
 
 class DatabaseSeeder extends Seeder
 {
@@ -13,11 +14,36 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        // Utilisateurs de test
+        $utilisateurs = [
+            [
+                'nom'                 => 'Emmy',
+                'prenom'              => 'Admin',
+                'username_outil_cicd' => 'emmy-github',
+                'mot_de_passe'        => Hash::make('Azerty123'),
+                'role'                => 'administrateur',
+                'date_inscription'    => Carbon::now(),
+            ],
+            [
+                'nom'                 => 'EmmySecu',
+                'prenom'              => 'Securite',
+                'username_outil_cicd' => 'emmysecu-github',
+                'mot_de_passe'        => Hash::make('Azerty1234'),
+                'role'                => 'securite',
+                'date_inscription'    => Carbon::now(),
+            ],
+            [
+                'nom'                 => 'EmmyAdmin',
+                'prenom'              => 'CloudDOI',
+                'username_outil_cicd' => 'emmyadmin-github',
+                'mot_de_passe'        => Hash::make('Azerty12345'),
+                'role'                => 'administrateur_cloud_doi',
+                'date_inscription'    => Carbon::now(),
+            ],
+        ];
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        foreach ($utilisateurs as $data) {
+            User::create($data);
+        }
     }
 }
