@@ -2,7 +2,10 @@
 
 namespace App\Features\Auth\Models;
 
+use App\Features\Equipes\Models\Equipe;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -28,6 +31,7 @@ class User extends Authenticatable
     protected $fillable = [
         'nom',
         'prenom',
+        'email',
         'username_outil_cicd',
         'mot_de_passe',
         'api_token',
@@ -61,5 +65,26 @@ class User extends Authenticatable
             'mot_de_passe'     => 'hashed',
             'date_inscription' => 'datetime',
         ];
+    }
+
+    /**
+     * Les équipes auxquelles l'utilisateur appartient.
+     */
+    public function equipes(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Equipe::class,
+            'membre_equipe',
+            'utilisateur_id',
+            'equipe_id'
+        )->withPivot('role', 'date_adhesion');
+    }
+
+    /**
+     * Les équipes dont l'utilisateur est propriétaire.
+     */
+    public function equipesProprietaire(): HasMany
+    {
+        return $this->hasMany(Equipe::class, 'proprietaire_id');
     }
 }

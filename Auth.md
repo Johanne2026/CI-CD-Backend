@@ -13,7 +13,8 @@ Ce document décrit les endpoints d'authentification exposés par ce backend Lar
 | `id` | bigint | Clé primaire auto-incrémentée |
 | `nom` | string | Nom de l'utilisateur |
 | `prenom` | string | Prénom de l'utilisateur |
-| `username_outil_cicd` | string unique | Nom d'utilisateur GitHub |
+| `email` | string unique | Adresse email (identifiant de connexion) |
+| `username_outil_cicd` | string unique nullable | Nom d'utilisateur GitHub (optionnel) |
 | `mot_de_passe` | string | Mot de passe hashé (bcrypt) |
 | `api_token` | string(64) nullable | Token d'authentification API (haché SHA-256) |
 | `token_outil_cicd` | string nullable | Token GitHub fourni à la connexion |
@@ -53,12 +54,15 @@ Authorization: Bearer <token>
 {
   "nom": "Doe",
   "prenom": "John",
+  "email": "john@example.com",
   "username_outil_cicd": "johndoe-github",
   "mot_de_passe": "motdepasse123",
   "mot_de_passe_confirmation": "motdepasse123",
   "role": "administrateur"
 }
 ```
+
+> `username_outil_cicd` est optionnel — peut être omis ou `null`.
 
 **Réponse 201 :**
 ```json
@@ -69,6 +73,7 @@ Authorization: Bearer <token>
     "id": 1,
     "nom": "Doe",
     "prenom": "John",
+    "email": "john@example.com",
     "username_outil_cicd": "johndoe-github",
     "role": "administrateur",
     "date_inscription": "2026-05-24T14:00:00.000000Z",
@@ -82,13 +87,13 @@ Authorization: Bearer <token>
 
 ### POST /api/login — Connexion
 
-La connexion se fait avec le `username_outil_cicd` (GitHub) et le mot de passe.
+La connexion se fait avec l'`email` et le mot de passe.
 Le `token_outil_cicd` (token GitHub) peut être fourni optionnellement.
 
 **Body :**
 ```json
 {
-  "username_outil_cicd": "johndoe-github",
+  "email": "john@example.com",
   "mot_de_passe": "motdepasse123",
   "token_outil_cicd": "ghp_xxxxxxxxxxxx"
 }
@@ -103,6 +108,7 @@ Le `token_outil_cicd` (token GitHub) peut être fourni optionnellement.
     "id": 1,
     "nom": "Doe",
     "prenom": "John",
+    "email": "john@example.com",
     "username_outil_cicd": "johndoe-github",
     "role": "administrateur",
     "date_inscription": "2026-05-24T14:00:00.000000Z",
@@ -173,7 +179,8 @@ Révoque le `api_token` et efface le `token_outil_cicd`.
 |---|---|
 | `nom` | Requis, string, max 255 |
 | `prenom` | Requis, string, max 255 |
-| `username_outil_cicd` | Requis, string, max 255, unique dans `Utilisateurs` |
+| `email` | Requis, email valide, unique, en minuscules |
+| `username_outil_cicd` | Optionnel, string, max 255, unique si fourni |
 | `mot_de_passe` | Requis, min 8 caractères, confirmé |
 | `mot_de_passe_confirmation` | Requis, identique à `mot_de_passe` |
 | `role` | Requis : `administrateur`, `administrateur_cloud_doi` ou `securite` |
@@ -182,7 +189,7 @@ Révoque le `api_token` et efface le `token_outil_cicd`.
 
 | Champ | Règles |
 |---|---|
-| `username_outil_cicd` | Requis, string |
+| `email` | Requis, string, email valide |
 | `mot_de_passe` | Requis, string |
 | `token_outil_cicd` | Optionnel, string |
 

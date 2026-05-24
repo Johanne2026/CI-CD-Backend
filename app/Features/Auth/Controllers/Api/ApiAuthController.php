@@ -32,11 +32,12 @@ class ApiAuthController extends Controller
     public function register(Request $request): JsonResponse
     {
         $request->validate([
-            'nom'                  => ['required', 'string', 'max:255'],
-            'prenom'               => ['required', 'string', 'max:255'],
-            'username_outil_cicd'  => ['required', 'string', 'max:255', 'unique:Utilisateurs,username_outil_cicd'],
-            'mot_de_passe'         => ['required', 'confirmed', Rules\Password::defaults()],
-            'role'                 => ['required', 'string', 'in:administrateur,administrateur_cloud_doi,securite'],
+            'nom'                 => ['required', 'string', 'max:255'],
+            'prenom'              => ['required', 'string', 'max:255'],
+            'email'               => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:Utilisateurs,email'],
+            'username_outil_cicd' => ['nullable', 'string', 'max:255', 'unique:Utilisateurs,username_outil_cicd'],
+            'mot_de_passe'        => ['required', 'confirmed', Rules\Password::defaults()],
+            'role'                => ['required', 'string', 'in:administrateur,administrateur_cloud_doi,securite'],
         ]);
 
         $token = Str::random(60);
@@ -44,6 +45,7 @@ class ApiAuthController extends Controller
         $user = User::create([
             'nom'                 => $request->nom,
             'prenom'              => $request->prenom,
+            'email'               => $request->email,
             'username_outil_cicd' => $request->username_outil_cicd,
             'mot_de_passe'        => $request->mot_de_passe,
             'api_token'           => hash('sha256', $token),
@@ -61,22 +63,22 @@ class ApiAuthController extends Controller
     /**
      * Connexion — POST /api/login
      *
-     * L'utilisateur se connecte avec son username_outil_cicd (GitHub) et son mot de passe.
-     * Le token GitHub (token_outil_cicd) peut être fourni optionnellement à la connexion.
+     * Identifiant : email + mot_de_passe.
+     * Le token GitHub (token_outil_cicd) peut être fourni optionnellement.
      */
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'username_outil_cicd' => ['required', 'string'],
-            'mot_de_passe'        => ['required', 'string'],
-            'token_outil_cicd'    => ['nullable', 'string'],
+            'email'            => ['required', 'string', 'email'],
+            'mot_de_passe'     => ['required', 'string'],
+            'token_outil_cicd' => ['nullable', 'string'],
         ]);
 
-        $user = User::where('username_outil_cicd', $request->username_outil_cicd)->first();
+        $user = User::where('email', $request->email)->first();
 
         if (! $user || ! password_verify($request->mot_de_passe, $user->getAuthPassword())) {
             throw ValidationException::withMessages([
-                'username_outil_cicd' => [__('auth.failed')],
+                'email' => [__('auth.failed')],
             ]);
         }
 

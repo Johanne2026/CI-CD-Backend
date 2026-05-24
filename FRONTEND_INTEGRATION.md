@@ -47,9 +47,10 @@ export interface User {
   id: number;
   nom: string;
   prenom: string;
-  username_outil_cicd: string;   // nom d'utilisateur GitHub
+  email: string;
+  username_outil_cicd: string | null; // nom d'utilisateur GitHub, optionnel
   role: UserRole;
-  date_inscription: string;      // ISO 8601 — renseigné à l'inscription
+  date_inscription: string;           // ISO 8601 — renseigné à l'inscription
   created_at: string;
   updated_at: string;
   // api_token, token_outil_cicd et mot_de_passe sont masqués par le backend
@@ -118,14 +119,15 @@ import { User, AuthResponse, UserRole } from '@/types/auth';
 interface RegisterPayload {
   nom: string;
   prenom: string;
-  username_outil_cicd: string;
+  email: string;
+  username_outil_cicd?: string; // optionnel
   mot_de_passe: string;
   mot_de_passe_confirmation: string;
   role: UserRole;
 }
 
 interface LoginPayload {
-  username_outil_cicd: string;
+  email: string;
   mot_de_passe: string;
   token_outil_cicd?: string; // token GitHub, optionnel
 }
@@ -316,6 +318,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     nom: '',
     prenom: '',
+    email: '',
     username_outil_cicd: '',
     mot_de_passe: '',
     mot_de_passe_confirmation: '',
@@ -357,7 +360,14 @@ export default function RegisterPage() {
       </div>
 
       <div>
-        <label>Nom d'utilisateur GitHub</label>
+        <label>Email</label>
+        <input type="email" value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        {errors.email && <span>{errors.email[0]}</span>}
+      </div>
+
+      <div>
+        <label>Nom d'utilisateur GitHub (optionnel)</label>
         <input type="text" value={form.username_outil_cicd}
           onChange={(e) => setForm({ ...form, username_outil_cicd: e.target.value })} />
         {errors.username_outil_cicd && <span>{errors.username_outil_cicd[0]}</span>}
@@ -412,7 +422,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
-    username_outil_cicd: '',
+    email: '',
     mot_de_passe: '',
     token_outil_cicd: '',   // token GitHub, optionnel
   });
@@ -425,7 +435,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const payload = {
-        username_outil_cicd: form.username_outil_cicd,
+        email: form.email,
         mot_de_passe: form.mot_de_passe,
         ...(form.token_outil_cicd ? { token_outil_cicd: form.token_outil_cicd } : {}),
       };
@@ -443,10 +453,10 @@ export default function LoginPage() {
   return (
     <form onSubmit={handleSubmit}>
       <div>
-        <label>Nom d'utilisateur GitHub</label>
-        <input type="text" value={form.username_outil_cicd}
-          onChange={(e) => setForm({ ...form, username_outil_cicd: e.target.value })} />
-        {errors.username_outil_cicd && <span>{errors.username_outil_cicd[0]}</span>}
+        <label>Email</label>
+        <input type="email" value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        {errors.email && <span>{errors.email[0]}</span>}
       </div>
 
       <div>
@@ -541,3 +551,10 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 | `401` | Token absent ou invalide → rediriger vers /login |
 | `422` | Erreur de validation → afficher `errors` dans le formulaire |
 | `500` | Erreur serveur |
+
+
+---
+
+## Autres documentations
+
+- **Équipes** → voir `EQUIPES_INTEGRATION.md`

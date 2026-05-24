@@ -14,6 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // CORS appliqué globalement pour que les headers soient présents même en cas d'erreur 500
         $middleware->prepend(\Illuminate\Http\Middleware\HandleCors::class);
+
+        // Alias de middleware personnalisés
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\AdminOnly::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

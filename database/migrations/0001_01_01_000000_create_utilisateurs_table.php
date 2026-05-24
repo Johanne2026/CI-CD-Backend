@@ -12,7 +12,8 @@ return new class extends Migration
             $table->id();
             $table->string('nom');
             $table->string('prenom');
-            $table->string('username_outil_cicd')->unique()->comment("Nom d'utilisateur GitHub");
+            $table->string('email')->unique();
+            $table->string('username_outil_cicd')->nullable()->unique()->comment("Nom d'utilisateur GitHub");
             $table->string('mot_de_passe');
             $table->string('api_token', 64)->unique()->nullable();
             $table->string('token_outil_cicd')->nullable()->comment('Token GitHub fourni à la connexion');
