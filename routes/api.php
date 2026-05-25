@@ -3,6 +3,7 @@
 use App\Features\Auth\Controllers\Api\ApiAuthController;
 use App\Features\Auth\Controllers\Api\ApiUserController;
 use App\Features\Equipes\Controllers\Api\ApiEquipeController;
+use App\Features\Projets\Controllers\Api\ApiProjetController;
 use Illuminate\Support\Facades\Route;
 
 // Routes publiques
@@ -28,5 +29,17 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/equipes/{id}/utilisateurs-disponibles',           [ApiEquipeController::class, 'utilisateursDispo']);
         Route::post('/equipes/{id}/membres',                           [ApiEquipeController::class, 'ajouterMembre']);
         Route::delete('/equipes/{id}/membres/{userId}',                [ApiEquipeController::class, 'retirerMembre']);
+    });
+
+    // Projets — lecture (tous les utilisateurs connectés)
+    Route::get('/projets',       [ApiProjetController::class, 'index']);
+    Route::get('/projets/{id}',  [ApiProjetController::class, 'show']);
+
+    // Projets — écriture (administrateur uniquement)
+    Route::middleware('admin')->group(function () {
+        Route::post('/projets',                    [ApiProjetController::class, 'store']);
+        Route::put('/projets/{id}',                [ApiProjetController::class, 'update']);
+        Route::patch('/projets/{id}/archiver',     [ApiProjetController::class, 'archiver']);
+        Route::delete('/projets/{id}',             [ApiProjetController::class, 'destroy']);
     });
 });

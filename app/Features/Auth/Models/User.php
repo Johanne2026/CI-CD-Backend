@@ -3,6 +3,7 @@
 namespace App\Features\Auth\Models;
 
 use App\Features\Equipes\Models\Equipe;
+use App\Features\Projets\Models\Projet;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -86,5 +87,13 @@ class User extends Authenticatable
     public function equipesProprietaire(): HasMany
     {
         return $this->hasMany(Equipe::class, 'proprietaire_id');
+    }
+
+    /**
+     * Les projets créés par cet utilisateur.
+     */
+    public function projets(): HasMany
+    {
+        return $this->hasMany(Projet::class, 'cree_par_id');
     }
 }

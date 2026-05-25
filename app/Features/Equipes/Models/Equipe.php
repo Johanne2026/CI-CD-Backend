@@ -3,10 +3,12 @@
 namespace App\Features\Equipes\Models;
 
 use App\Features\Auth\Models\User;
+use App\Features\Projets\Models\Projet;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Equipe extends Model
 {
@@ -58,5 +60,13 @@ class Equipe extends Model
     public function membresEquipe(): HasMany
     {
         return $this->hasMany(MembreEquipe::class, 'equipe_id');
+    }
+
+    /**
+     * Le projet associé à cette équipe (une équipe = un seul projet).
+     */
+    public function projet(): HasOne
+    {
+        return $this->hasOne(Projet::class, 'equipe_id');
     }
 }
