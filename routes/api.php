@@ -4,6 +4,7 @@ use App\Features\Auth\Controllers\Api\ApiAuthController;
 use App\Features\Auth\Controllers\Api\ApiUserController;
 use App\Features\Equipes\Controllers\Api\ApiEquipeController;
 use App\Features\Projets\Controllers\Api\ApiProjetController;
+use App\Features\Projets\Controllers\Api\ApiWorkflowController;
 use Illuminate\Support\Facades\Route;
 
 // Routes publiques
@@ -15,6 +16,7 @@ Route::middleware('auth:api')->group(function () {
 
     // Auth
     Route::get('/user',    [ApiUserController::class, 'show']);
+    Route::put('/user',    [ApiUserController::class, 'update']);
     Route::post('/logout', [ApiAuthController::class, 'logout']);
 
     // Équipes — lecture (tous les utilisateurs connectés)
@@ -37,9 +39,16 @@ Route::middleware('auth:api')->group(function () {
 
     // Projets — écriture (administrateur uniquement)
     Route::middleware('admin')->group(function () {
-        Route::post('/projets',                    [ApiProjetController::class, 'store']);
-        Route::put('/projets/{id}',                [ApiProjetController::class, 'update']);
-        Route::patch('/projets/{id}/archiver',     [ApiProjetController::class, 'archiver']);
-        Route::delete('/projets/{id}',             [ApiProjetController::class, 'destroy']);
+        Route::post('/projets',                        [ApiProjetController::class, 'store']);
+        Route::put('/projets/{id}',                    [ApiProjetController::class, 'update']);
+        Route::patch('/projets/{id}/archiver',         [ApiProjetController::class, 'archiver']);
+        Route::delete('/projets/{id}',                 [ApiProjetController::class, 'destroy']);
     });
+
+    // Connexion GitHub d'un projet (tous les utilisateurs connectés)
+    Route::post('/projets/{id}/connecter-depot',                   [ApiProjetController::class,  'connecterDepot']);
+
+    // Workflows GitHub (tous les utilisateurs connectés)
+    Route::post('/projets/{id}/workflows/sync',                    [ApiWorkflowController::class, 'sync']);
+    Route::get('/projets/{id}/workflows/{workflowId}/runs',        [ApiWorkflowController::class, 'runs']);
 });

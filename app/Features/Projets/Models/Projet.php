@@ -21,6 +21,7 @@ class Projet extends Model
         'stack_technologique',
         'actif',
         'duree_projet',
+        'url_depot',
     ];
 
     protected function casts(): array
@@ -32,6 +33,20 @@ class Projet extends Model
             'date_mise_a_jour'    => 'datetime',
         ];
     }
+
+    /**
+     * Indique si le projet est lié à un dépôt GitHub.
+     * Retourné automatiquement dans toutes les réponses JSON.
+     */
+    public function getLieAUnDepotAttribute(): bool
+    {
+        return ! empty($this->url_depot);
+    }
+
+    /**
+     * Inclut lie_a_un_depot dans la sérialisation JSON.
+     */
+    protected $appends = ['lie_a_un_depot'];
 
     /**
      * L'équipe à laquelle appartient le projet.

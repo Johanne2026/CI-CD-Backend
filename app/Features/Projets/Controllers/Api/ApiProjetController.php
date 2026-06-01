@@ -86,6 +86,7 @@ class ApiProjetController extends Controller
             'stack_technologique' => ['nullable', 'array'],
             'stack_technologique.*' => ['string'],
             'duree_projet'        => ['nullable', 'string', 'max:255'],
+            'url_depot'           => ['nullable', 'string', 'url', 'max:500'],
         ]);
 
         $projet = Projet::create([
@@ -96,6 +97,7 @@ class ApiProjetController extends Controller
             'stack_technologique' => $request->stack_technologique ?? [],
             'actif'               => true,
             'duree_projet'        => $request->duree_projet,
+            'url_depot'           => $request->url_depot,
         ]);
 
         $projet->load(['equipe:id,nom', 'creePar:id,nom,prenom']);
@@ -118,13 +120,15 @@ class ApiProjetController extends Controller
             'stack_technologique'   => ['nullable', 'array'],
             'stack_technologique.*' => ['string'],
             'duree_projet'          => ['nullable', 'string', 'max:255'],
+            'url_depot'             => ['nullable', 'string', 'url', 'max:500'],
         ]);
 
         $projet->update($request->only(
             'nom',
             'description',
             'stack_technologique',
-            'duree_projet'
+            'duree_projet',
+            'url_depot'
         ));
 
         $projet->load(['equipe:id,nom', 'creePar:id,nom,prenom']);
@@ -148,6 +152,40 @@ class ApiProjetController extends Controller
 
         return response()->json([
             'message' => $message,
+            'projet'  => $projet,
+        ]);
+    }
+
+    /**
+     * Connecte un projet à un dépôt GitHub.
+     * Enregistre l'url_depot et les identifiants GitHub de l'utilisateur.
+     *
+     * POST /api/projets/{id}/connecter-depot
+     */
+    public function connecterDepot(Request $request, int $id): JsonResponse
+    {
+        $projet = Projet::findOrFail($id);
+
+        $request->validate([
+            'url_depot'           => ['required', 'string', 'url', 'max:500'],
+            'username_outil_cicd' => ['required', 'string', 'max:255'],
+            'token_outil_cicd'    => ['required', 'string', 'max:255'],
+        ]);
+
+        // Sauvegarde l'URL du dépôt sur le projet
+        $projet->update(['url_depot' => $request->url_depot]);
+
+        // Sauvegarde les identifiants GitHub sur l'utilisateur connecté
+        $user = $request->user();
+        $user->update([
+            'username_outil_cicd' => $request->username_outil_cicd,
+            'token_outil_cicd'    => $request->token_outil_cicd,
+        ]);
+
+        $projet->load(['equipe:id,nom', 'creePar:id,nom,prenom']);
+
+        return response()->json([
+            'message' => 'Projet lié au dépôt GitHub avec succès.',
             'projet'  => $projet,
         ]);
     }

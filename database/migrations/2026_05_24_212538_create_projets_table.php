@@ -30,6 +30,7 @@ return new class extends Migration
             $table->boolean('actif')->default(true)->comment('true = actif, false = archivé');
 
             $table->string('duree_projet')->nullable()->comment('Ex: 3 mois, 6 semaines...');
+            $table->string('url_depot')->nullable()->comment('URL du dépôt GitHub lié au projet');
 
             $table->timestamp('date_creation')->useCurrent();
             $table->timestamp('date_mise_a_jour')->useCurrent()->useCurrentOnUpdate();
