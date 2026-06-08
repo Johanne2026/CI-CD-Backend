@@ -18,6 +18,8 @@ Ce document décrit tout ce que le frontend React doit implémenter pour la gest
 | `stack_technologique` | JSON | Liste des technologies (ex: `["Laravel", "React", "Docker"]`) |
 | `actif` | boolean | `true` = actif, `false` = archivé |
 | `duree_projet` | string nullable | Durée estimée (ex: `"6 mois"`, `"3 semaines"`) |
+| `url_depot` | string nullable | URL du dépôt GitHub lié au projet |
+| `lie_a_un_depot` | boolean (calculé) | `true` si `url_depot` est renseigné, `false` sinon |
 | `date_creation` | timestamp | Renseigné automatiquement à la création |
 | `date_mise_a_jour` | timestamp | Mis à jour automatiquement à chaque modification |
 
@@ -43,20 +45,15 @@ export interface Projet {
   cree_par_id: number;
   nom: string;
   description: string | null;
-  stack_technologique: string[];  // tableau de technologies
-  actif: boolean;                 // true = actif, false = archivé
+  stack_technologique: string[];
+  actif: boolean;
   duree_projet: string | null;
-  date_creation: string;          // ISO 8601
-  date_mise_a_jour: string;       // ISO 8601
-  equipe: {
-    id: number;
-    nom: string;
-  };
-  cree_par: {
-    id: number;
-    nom: string;
-    prenom: string;
-  };
+  url_depot: string | null;        // URL du dépôt GitHub
+  lie_a_un_depot: boolean;         // true si url_depot est renseigné
+  date_creation: string;
+  date_mise_a_jour: string;
+  equipe: { id: number; nom: string; };
+  cree_par: { id: number; nom: string; prenom: string; };
 }
 
 export interface CreateProjetPayload {
@@ -87,6 +84,7 @@ export interface UpdateProjetPayload {
 | `PUT` | `/api/projets/{id}` | Oui | `administrateur` | Modifier un projet |
 | `PATCH` | `/api/projets/{id}/archiver` | Oui | `administrateur` | Archiver ou réactiver |
 | `DELETE` | `/api/projets/{id}` | Oui | `administrateur` | Supprimer définitivement |
+| `POST` | `/api/projets/{id}/connecter-depot` | Oui | Tous | Lier un dépôt GitHub au projet |
 
 ---
 
@@ -347,6 +345,169 @@ export default function ProjetsPage() {
 | `404` | Projet introuvable |
 | `422` | Erreur de validation (ex: équipe déjà associée à un projet) |
 | `500` | Erreur serveur |
+
+---
+
+## Connexion GitHub — POST /api/projets/{id}/connecter-depot
+
+Appelé lorsque l'utilisateur soumet le formulaire "Connecter GitHub" depuis un projet.
+Enregistre l'URL du dépôt sur le projet **et** les identifiants GitHub sur l'utilisateur connecté en une seule requête.
+
+**Body :**
+```json
+{
+  "url_depot":           "https://github.com/organisation/mon-repo",
+  "username_outil_cicd": "mon-username-github",
+  "token_outil_cicd":    "ghp_xxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+**Réponse 200 :**
+```json
+{
+  "message": "Projet lié au dépôt GitHub avec succès.",
+  "projet": {
+    "id": 1,
+    "nom": "Projet CI/CD",
+    "url_depot": "https://github.com/organisation/mon-repo",
+    "lie_a_un_depot": true,
+    "...": "autres champs du projet"
+  }
+}
+```
+
+**Règles de validation :**
+
+| Champ | Règles |
+|---|---|
+| `url_depot` | Requis, URL valide, max 500 caractères |
+| `username_outil_cicd` | Requis, string, max 255 |
+| `token_outil_cicd` | Requis, string, max 255 |
+
+---
+
+## Indicateur "Lié à un dépôt"
+
+Chaque projet retourné par l'API inclut le champ calculé `lie_a_un_depot` :
+- `true` → le projet a une `url_depot` renseignée → afficher **"Lié à un dépôt"**
+- `false` → pas de dépôt lié → afficher le bouton **"Connecter GitHub"**
+
+```tsx
+{projet.lie_a_un_depot ? (
+  <span className="text-green-600 font-medium">✓ Lié à un dépôt</span>
+) : (
+  <button onClick={() => navigate(`/projects/${projet.id}/github`)}>
+    Connecter GitHub
+  </button>
+)}
+```
+
+---
+
+Lorsqu'un utilisateur clique sur **"Connecter GitHub"** dans un projet, le frontend envoie ses identifiants GitHub. Le backend met à jour les colonnes `username_outil_cicd` et `token_outil_cicd` dans la table `Utilisateurs`.
+
+**Méthode :** `PUT /api/user` — protégée par `auth:api`
+
+**Body :**
+```json
+{
+  "username_outil_cicd": "mon-username-github",
+  "token_outil_cicd": "ghp_xxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+**Réponse 200 — utilisateur mis à jour (`token_outil_cicd` masqué) :**
+```json
+{
+  "id": 1,
+  "nom": "Emmy",
+  "prenom": "Admin",
+  "email": "emmy@gmail.com",
+  "username_outil_cicd": "mon-username-github",
+  "role": "administrateur",
+  "date_inscription": "2026-05-25T00:00:00.000000Z",
+  "created_at": "2026-05-25T00:00:00.000000Z",
+  "updated_at": "2026-05-25T10:30:00.000000Z"
+}
+```
+
+> `token_outil_cicd` est masqué via `$hidden` et n'apparaît jamais dans les réponses.
+
+**Règles de validation :**
+
+| Champ | Règles |
+|---|---|
+| `username_outil_cicd` | Optionnel, string, max 255, peut être `null` |
+| `token_outil_cicd` | Optionnel, string, max 255, peut être `null` |
+
+> Les champs absents de la requête ne sont pas modifiés (`sometimes`).
+
+**Exemple React :**
+
+```ts
+// src/hooks/useGithubConnect.ts
+import api from '@/lib/api';
+
+export async function connecterGithub(
+  username: string,
+  token: string
+): Promise<void> {
+  await api.put('/user', {
+    username_outil_cicd: username,
+    token_outil_cicd:    token,
+  });
+}
+```
+
+```tsx
+// Dans le composant "Connecter GitHub"
+import { useState } from 'react';
+import { connecterGithub } from '@/hooks/useGithubConnect';
+
+export default function ConnecterGithub() {
+  const [username, setUsername] = useState('');
+  const [token, setToken]       = useState('');
+  const [success, setSuccess]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await connecterGithub(username, token);
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.response?.data?.message ?? 'Erreur de connexion GitHub.');
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div>
+        <label>Nom d'utilisateur GitHub</label>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="mon-username-github"
+        />
+      </div>
+      <div>
+        <label>Token GitHub</label>
+        <input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+        />
+      </div>
+      <button type="submit">Connecter GitHub</button>
+      {success && <p>GitHub connecté avec succès.</p>}
+      {error   && <p style={{ color: 'red' }}>{error}</p>}
+    </form>
+  );
+}
+```
 
 ---
 

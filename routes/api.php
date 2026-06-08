@@ -2,6 +2,7 @@
 
 use App\Features\Auth\Controllers\Api\ApiAuthController;
 use App\Features\Auth\Controllers\Api\ApiUserController;
+use App\Features\Deploiement\Controllers\Api\ApiDeployController;
 use App\Features\Equipes\Controllers\Api\ApiEquipeController;
 use App\Features\Projets\Controllers\Api\ApiProjetController;
 use App\Features\Projets\Controllers\Api\ApiWorkflowController;
@@ -10,6 +11,11 @@ use Illuminate\Support\Facades\Route;
 // Routes publiques
 Route::post('/register', [ApiAuthController::class, 'register']);
 Route::post('/login',    [ApiAuthController::class, 'login']);
+
+// Callback VM — supprimé, approche synchrone utilisée à la place
+
+// Preflight OPTIONS pour les requêtes multipart/form-data (upload .zip)
+Route::options('/projets/{id}/upload-zip', fn() => response()->json([], 200));
 
 // Routes protégées — nécessitent un token valide
 Route::middleware('auth:api')->group(function () {
@@ -48,7 +54,20 @@ Route::middleware('auth:api')->group(function () {
     // Connexion GitHub d'un projet (tous les utilisateurs connectés)
     Route::post('/projets/{id}/connecter-depot',                   [ApiProjetController::class,  'connecterDepot']);
 
+    // Templates GitHub Actions (tous les utilisateurs connectés)
+    Route::get('/workflows/templates',                             [ApiWorkflowController::class, 'templates']);
+    Route::get('/workflows/templates/{fichier}',                   [ApiWorkflowController::class, 'templateContenu']);
+
     // Workflows GitHub (tous les utilisateurs connectés)
     Route::post('/projets/{id}/workflows/sync',                    [ApiWorkflowController::class, 'sync']);
+    Route::post('/projets/{id}/workflows/depuis-template',         [ApiWorkflowController::class, 'depuisTemplate']);
     Route::get('/projets/{id}/workflows/{workflowId}/runs',        [ApiWorkflowController::class, 'runs']);
+
+    // Déploiements — Étape 1 : upload du .zip vers la VM
+    Route::post('/projets/{id}/upload-zip',    [ApiDeployController::class, 'uploadZip']);
+    // Déploiements — Étape 2 : lancer deploy.ps1 (synchrone — attend la fin)
+    Route::post('/deploiements/{id}/lancer',   [ApiDeployController::class, 'lancerDeploi']);
+    // Déploiements — Relecture des logs en BD
+    Route::get('/deploiements/{id}/logs',      [ApiDeployController::class, 'getLogs']);
+
 });
