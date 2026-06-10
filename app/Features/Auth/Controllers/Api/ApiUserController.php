@@ -18,6 +18,22 @@ class ApiUserController extends Controller
     }
 
     /**
+     * Liste tous les utilisateurs (pour les sélecteurs dans les formulaires admin).
+     * Retourne uniquement les champs nécessaires à l'affichage.
+     *
+     * GET /api/utilisateurs  [admin]
+     */
+    public function index(): JsonResponse
+    {
+        $utilisateurs = \App\Features\Auth\Models\User::select('id', 'nom', 'prenom', 'email', 'role')
+            ->orderBy('nom')
+            ->orderBy('prenom')
+            ->get();
+
+        return response()->json($utilisateurs);
+    }
+
+    /**
      * Met à jour les informations de l'utilisateur authentifié.
      * Utilisé notamment pour la connexion GitHub (username_outil_cicd + token_outil_cicd).
      *

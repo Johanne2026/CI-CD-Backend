@@ -69,27 +69,27 @@ class ApiEquipeController extends Controller
     }
 
     /**
-     * Crée une équipe et enregistre le propriétaire dans membre_equipe.
+     * Crée une équipe.
+     * Le propriétaire est automatiquement l'utilisateur connecté (administrateur).
      *
      * POST /api/equipes  [admin]
      */
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'proprietaire_id' => ['required', 'integer', 'exists:Utilisateurs,id'],
-            'nom'             => ['required', 'string', 'max:255'],
-            'description'     => ['nullable', 'string'],
+            'nom'         => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
         ]);
 
         $equipe = Equipe::create([
-            'proprietaire_id' => $request->proprietaire_id,
+            'proprietaire_id' => $request->user()->id,
             'nom'             => $request->nom,
             'description'     => $request->description,
         ]);
 
         // Enregistre le propriétaire dans membre_equipe avec le rôle "proprietaire"
         MembreEquipe::create([
-            'utilisateur_id' => $request->proprietaire_id,
+            'utilisateur_id' => $request->user()->id,
             'equipe_id'      => $equipe->id,
             'role'           => 'proprietaire',
             'date_adhesion'  => Carbon::now(),

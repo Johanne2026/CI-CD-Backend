@@ -75,20 +75,20 @@ class ApiProjetController extends Controller
 
     /**
      * Crée un projet.
-     * Une équipe ne peut avoir qu'un seul projet.
+     * Une équipe peut avoir plusieurs projets.
      *
      * POST /api/projets  [admin]
      */
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'equipe_id'           => ['required', 'integer', 'exists:Equipes,id', 'unique:Projets,equipe_id'],
-            'nom'                 => ['required', 'string', 'max:255'],
-            'description'         => ['nullable', 'string'],
-            'stack_technologique' => ['nullable', 'array'],
+            'equipe_id'             => ['required', 'integer', 'exists:Equipes,id'],
+            'nom'                   => ['required', 'string', 'max:255'],
+            'description'           => ['nullable', 'string'],
+            'stack_technologique'   => ['nullable', 'array'],
             'stack_technologique.*' => ['string'],
-            'duree_projet'        => ['nullable', 'string', 'max:255'],
-            'url_depot'           => ['nullable', 'string', 'url', 'max:500'],
+            'duree_projet'          => ['nullable', 'string', 'max:255'],
+            'url_depot'             => ['nullable', 'string', 'url', 'max:500'],
         ]);
 
         $projet = Projet::create([

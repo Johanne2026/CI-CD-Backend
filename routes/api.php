@@ -4,6 +4,7 @@ use App\Features\Auth\Controllers\Api\ApiAuthController;
 use App\Features\Auth\Controllers\Api\ApiUserController;
 use App\Features\Deploiement\Controllers\Api\ApiDeployController;
 use App\Features\Equipes\Controllers\Api\ApiEquipeController;
+use App\Features\Notifications\Controllers\Api\ApiNotificationController;
 use App\Features\Projets\Controllers\Api\ApiProjetController;
 use App\Features\Projets\Controllers\Api\ApiWorkflowController;
 use Illuminate\Support\Facades\Route;
@@ -21,9 +22,10 @@ Route::options('/projets/{id}/upload-zip', fn() => response()->json([], 200));
 Route::middleware('auth:api')->group(function () {
 
     // Auth
-    Route::get('/user',    [ApiUserController::class, 'show']);
-    Route::put('/user',    [ApiUserController::class, 'update']);
-    Route::post('/logout', [ApiAuthController::class, 'logout']);
+    Route::get('/user',         [ApiUserController::class, 'show']);
+    Route::get('/utilisateurs', [ApiUserController::class, 'index']);
+    Route::put('/user',         [ApiUserController::class, 'update']);
+    Route::post('/logout',      [ApiAuthController::class, 'logout']);
 
     // Équipes — lecture (tous les utilisateurs connectés)
     Route::get('/equipes',       [ApiEquipeController::class, 'index']);
@@ -78,5 +80,12 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/deploiements/{id}/lancer',   [ApiDeployController::class, 'lancerDeploi']);
     // Déploiements — Relecture des logs en BD
     Route::get('/deploiements/{id}/logs',      [ApiDeployController::class, 'getLogs']);
+
+    // Notifications
+    Route::get('/notifications',                        [ApiNotificationController::class, 'index']);
+    Route::patch('/notifications/lire-toutes',          [ApiNotificationController::class, 'marquerToutesLues']);
+    Route::patch('/notifications/{id}/lire',            [ApiNotificationController::class, 'marquerLue']);
+    Route::delete('/notifications/lues',                [ApiNotificationController::class, 'supprimerLues']);
+    Route::delete('/notifications/{id}',                [ApiNotificationController::class, 'destroy']);
 
 });

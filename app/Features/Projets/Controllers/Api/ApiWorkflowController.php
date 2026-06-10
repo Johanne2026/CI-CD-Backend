@@ -26,10 +26,11 @@ class ApiWorkflowController extends Controller
     private function githubHttp(): \Illuminate\Http\Client\PendingRequest
     {
         $http = Http::withHeaders([
-            'Accept'               => 'application/vnd.github+json',
+            'Accept'            => 'application/vnd.github+json',
             'X-GitHub-Api-Version' => '2022-11-28',
-            'User-Agent'           => 'Laravel-CICD-App',
-        ])->timeout(30);
+            'User-Agent'        => 'Laravel-CICD-App',
+            'Accept-Encoding'   => 'gzip, deflate',  // réduit la taille de la réponse
+        ])->timeout(60);  // 60s — GitHub peut être lent selon le réseau
 
         if (env('HTTPS_PROXY')) {
             $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
