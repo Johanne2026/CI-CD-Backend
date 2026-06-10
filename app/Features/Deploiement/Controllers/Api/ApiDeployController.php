@@ -209,7 +209,7 @@ class ApiDeployController extends Controller
 
     /**
      * Lit deploy.meta.json dans un .zip sans extraire les fichiers.
-     * Cherche à la racine, dans un sous-dossier de premier niveau, ou partout.
+     * Cherche à la racine, dans un sous-dossier, ou dans un zip imbriqué (zip dans zip).
      */
     private function lireMetaDepuisZip(string $zipPath): ?array
     {
@@ -219,19 +219,48 @@ class ApiDeployController extends Controller
             return null;
         }
 
+        // Tentative 1 : deploy.meta.json à la racine
         $contenu = $zip->getFromName('deploy.meta.json');
 
+        // Tentative 2 : dans un sous-dossier portant le nom du zip
         if ($contenu === false) {
             $nomSansZip = pathinfo($zipPath, PATHINFO_FILENAME);
             $contenu    = $zip->getFromName($nomSansZip . '/deploy.meta.json');
         }
 
+        // Tentative 3 : parcourir toutes les entrées
         if ($contenu === false) {
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $stat = $zip->statIndex($i);
                 if ($stat && basename($stat['name']) === 'deploy.meta.json') {
                     $contenu = $zip->getFromIndex($i);
                     break;
+                }
+            }
+        }
+
+        // Tentative 4 : zip imbriqué — chercher un .zip dans le zip et l'inspecter récursivement
+        if ($contenu === false) {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                if (! $stat || ! str_ends_with(strtolower($stat['name']), '.zip')) {
+                    continue;
+                }
+
+                $zipInterneContenu = $zip->getFromIndex($i);
+                if ($zipInterneContenu === false) {
+                    continue;
+                }
+
+                $tmpPath = tempnam(sys_get_temp_dir(), 'deploy_inner_') . '.zip';
+                file_put_contents($tmpPath, $zipInterneContenu);
+
+                $metaInterne = $this->lireMetaDepuisZip($tmpPath);
+                unlink($tmpPath);
+
+                if ($metaInterne !== null) {
+                    $zip->close();
+                    return $metaInterne;
                 }
             }
         }

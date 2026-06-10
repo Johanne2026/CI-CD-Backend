@@ -22,6 +22,7 @@ class Projet extends Model
         'actif',
         'duree_projet',
         'url_depot',
+        'cle_deploiement',
     ];
 
     protected function casts(): array

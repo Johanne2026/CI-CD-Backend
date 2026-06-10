@@ -19,4 +19,17 @@ return [
     | Laisser vide pour désactiver la vérification (déconseillé).
     */
     'callback_secret' => env('DEPLOY_CALLBACK_SECRET', ''),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fichier de synchronisation des clés de déploiement (CD)
+    |--------------------------------------------------------------------------
+    | Chemin vers deploy-keys.json sur le disque partagé avec la VM.
+    | Quand une clé est générée, le backend met à jour ce fichier.
+    | Le pipeline CD lit ce fichier pour vérifier les clés autorisées.
+    |
+    | Via tsclient RDP : \\tsclient\C\Deploy\Security\deploy-keys.json
+    | Chemin direct    : C:\Deploy\Security\deploy-keys.json
+    */
+    'keys_file' => env('DEPLOY_KEYS_FILE', 'C:\\Deploy\\Security\\deploy-keys.json'),
 ];

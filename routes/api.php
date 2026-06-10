@@ -54,6 +54,11 @@ Route::middleware('auth:api')->group(function () {
     // Connexion GitHub d'un projet (tous les utilisateurs connectés)
     Route::post('/projets/{id}/connecter-depot',                   [ApiProjetController::class,  'connecterDepot']);
 
+    // Génération de clé de déploiement (administrateur uniquement)
+    Route::middleware('admin')->group(function () {
+        Route::post('/projets/{id}/generer-cle-deploiement',       [ApiProjetController::class, 'genererCleDeploiement']);
+    });
+
     // Templates GitHub Actions (tous les utilisateurs connectés)
     Route::get('/workflows/templates',                             [ApiWorkflowController::class, 'templates']);
     Route::get('/workflows/templates/{fichier}',                   [ApiWorkflowController::class, 'templateContenu']);
@@ -62,6 +67,10 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/projets/{id}/workflows/sync',                    [ApiWorkflowController::class, 'sync']);
     Route::post('/projets/{id}/workflows/depuis-template',         [ApiWorkflowController::class, 'depuisTemplate']);
     Route::get('/projets/{id}/workflows/{workflowId}/runs',        [ApiWorkflowController::class, 'runs']);
+
+    // Artifacts CI — administrateur uniquement
+    Route::get('/projets/{id}/workflows/runs/{runId}/artifacts',              [ApiWorkflowController::class, 'artifacts']);
+    Route::get('/projets/{id}/workflows/artifacts/{artifactId}/download',     [ApiWorkflowController::class, 'downloadArtifact']);
 
     // Déploiements — Étape 1 : upload du .zip vers la VM
     Route::post('/projets/{id}/upload-zip',    [ApiDeployController::class, 'uploadZip']);

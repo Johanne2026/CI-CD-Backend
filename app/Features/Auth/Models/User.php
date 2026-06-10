@@ -36,7 +36,6 @@ class User extends Authenticatable
         'username_outil_cicd',
         'mot_de_passe',
         'api_token',
-        'token_outil_cicd',
         'date_inscription',
         'role',
     ];
@@ -44,7 +43,6 @@ class User extends Authenticatable
     protected $hidden = [
         'mot_de_passe',
         'api_token',
-        'token_outil_cicd',
     ];
 
     /**

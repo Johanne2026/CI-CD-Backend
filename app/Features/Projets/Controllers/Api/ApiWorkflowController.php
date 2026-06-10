@@ -12,17 +12,45 @@ use Illuminate\Support\Facades\Http;
 class ApiWorkflowController extends Controller
 {
     /**
+     * Retourne le token GitHub depuis la config (.env GITHUB_TOKEN).
+     * Toutes les méthodes utilisent ce token centralisé.
+     */
+    private function githubToken(): string
+    {
+        return config('services.github.token', '');
+    }
+
+    /**
+     * Construit un client Http:: préconfiguré pour l'API GitHub.
+     */
+    private function githubHttp(): \Illuminate\Http\Client\PendingRequest
+    {
+        $http = Http::withHeaders([
+            'Accept'               => 'application/vnd.github+json',
+            'X-GitHub-Api-Version' => '2022-11-28',
+            'User-Agent'           => 'Laravel-CICD-App',
+        ])->timeout(30);
+
+        if (env('HTTPS_PROXY')) {
+            $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
+        }
+
+        $token = $this->githubToken();
+        if ($token) {
+            $http = $http->withToken($token);
+        }
+
+        return $http;
+    }
+
+    /**
      * Extrait owner/repo depuis une URL GitHub.
-     * Ex: https://github.com/owner/repo → ['owner', 'repo']
      */
     private function parseDepotUrl(string $url): array
     {
-        // Supprime .git en fin d'URL si présent
-        $url = rtrim($url, '/');
-        $url = preg_replace('/\.git$/', '', $url);
-
-        $parts = explode('/', parse_url($url, PHP_URL_PATH));
-        $parts = array_values(array_filter($parts));
+        $url   = rtrim($url, '/');
+        $url   = preg_replace('/\.git$/', '', $url);
+        $parts = array_values(array_filter(explode('/', parse_url($url, PHP_URL_PATH))));
 
         if (count($parts) < 2) {
             throw new \InvalidArgumentException('URL du dépôt GitHub invalide.');
@@ -48,10 +76,7 @@ class ApiWorkflowController extends Controller
     }
 
     /**
-     * Synchronise et retourne tous les workflows (pipelines) du dépôt GitHub lié.
-     * Fonctionne sans token pour les dépôts publics.
-     * Utilise le token si disponible pour éviter la limite de 60 req/h.
-     *
+     * Synchronise et retourne tous les workflows du dépôt GitHub lié.
      * POST /api/projets/{id}/workflows/sync
      */
     public function sync(Request $request, int $id): JsonResponse
@@ -63,9 +88,7 @@ class ApiWorkflowController extends Controller
         }
 
         if (! $projet->url_depot) {
-            return response()->json([
-                'message' => 'Ce projet n\'est pas lié à un dépôt GitHub.',
-            ], 422);
+            return response()->json(['message' => 'Ce projet n\'est pas lié à un dépôt GitHub.'], 422);
         }
 
         try {
@@ -74,31 +97,16 @@ class ApiWorkflowController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        // Utilise le token si disponible, sinon requête publique
-        $http = Http::withHeaders(['Accept' => 'application/vnd.github+json'])
-                    ->timeout(30);
-
-        // Proxy si configuré dans .env
-        if (env('HTTPS_PROXY')) {
-            $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
-        }
-
-        $token = $request->user()->token_outil_cicd;
-        if ($token) {
-            $http = $http->withToken($token);
-        }
-
-        $response = $http->get("https://api.github.com/repos/{$owner}/{$repo}/actions/workflows");
+        $response = $this->githubHttp()
+            ->get("https://api.github.com/repos/{$owner}/{$repo}/actions/workflows");
 
         if ($response->status() === 401) {
-            return response()->json([
-                'message' => 'Token GitHub invalide ou expiré. Veuillez reconnecter votre compte GitHub.',
-            ], 401);
+            return response()->json(['message' => 'Token GitHub invalide ou expiré.'], 401);
         }
 
         if ($response->status() === 404) {
             return response()->json([
-                'message' => "Dépôt introuvable : {$owner}/{$repo}. Vérifiez l'URL du dépôt.",
+                'message' => "Dépôt introuvable : {$owner}/{$repo}.",
             ], 404);
         }
 
@@ -129,8 +137,7 @@ class ApiWorkflowController extends Controller
     }
 
     /**
-     * Retourne les exécutions (runs) d'un workflow spécifique.
-     *
+     * Retourne les exécutions d'un workflow spécifique.
      * GET /api/projets/{id}/workflows/{workflowId}/runs
      */
     public function runs(Request $request, int $id, int $workflowId): JsonResponse
@@ -142,12 +149,8 @@ class ApiWorkflowController extends Controller
         }
 
         if (! $projet->url_depot) {
-            return response()->json([
-                'message' => 'Ce projet n\'est pas lié à un dépôt GitHub.',
-            ], 422);
+            return response()->json(['message' => 'Ce projet n\'est pas lié à un dépôt GitHub.'], 422);
         }
-
-        $user = $request->user();
 
         try {
             [$owner, $repo] = $this->parseDepotUrl($projet->url_depot);
@@ -155,19 +158,7 @@ class ApiWorkflowController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $http  = Http::withHeaders(['Accept' => 'application/vnd.github+json'])
-                     ->timeout(30);
-
-        if (env('HTTPS_PROXY')) {
-            $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
-        }
-
-        $token = $user->token_outil_cicd;
-        if ($token) {
-            $http = $http->withToken($token);
-        }
-
-        $response = $http->get(
+        $response = $this->githubHttp()->get(
             "https://api.github.com/repos/{$owner}/{$repo}/actions/workflows/{$workflowId}/runs",
             ['per_page' => 10]
         );
@@ -183,11 +174,11 @@ class ApiWorkflowController extends Controller
         $runs = collect($data['workflow_runs'] ?? [])->map(fn ($r) => [
             'id'          => $r['id'],
             'nom'         => $r['name'],
-            'statut'      => $r['status'],       // queued | in_progress | completed
-            'conclusion'  => $r['conclusion'],   // success | failure | cancelled | null
+            'statut'      => $r['status'],
+            'conclusion'  => $r['conclusion'],
             'branche'     => $r['head_branch'],
             'commit_sha'  => substr($r['head_sha'], 0, 7),
-            'declencheur' => $r['event'],         // push | pull_request | workflow_dispatch...
+            'declencheur' => $r['event'],
             'url_github'  => $r['html_url'],
             'debut'       => $r['run_started_at'],
             'fin'         => $r['updated_at'],
@@ -201,31 +192,13 @@ class ApiWorkflowController extends Controller
 
     /**
      * Retourne la liste des templates GitHub Actions officiels.
-     * Source : dépôt public actions/starter-workflows (catégorie CI).
-     * Accessible sans token — dépôt public.
-     *
      * GET /api/workflows/templates
      */
     public function templates(Request $request): JsonResponse
     {
-        $categorie = $request->query('categorie', 'ci'); // ci | deployments | automation | pages | code-scanning
+        $categorie = $request->query('categorie', 'ci');
 
-        $http = Http::withHeaders([
-            'Accept'     => 'application/vnd.github+json',
-            'User-Agent' => 'Laravel-CICD-App',
-        ])->timeout(15);
-
-        if (env('HTTPS_PROXY')) {
-            $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
-        }
-
-        // Utilise le token de l'utilisateur si disponible (évite la limite 60 req/h)
-        $token = $request->user()?->token_outil_cicd;
-        if ($token) {
-            $http = $http->withToken($token);
-        }
-
-        $response = $http->get(
+        $response = $this->githubHttp()->get(
             "https://api.github.com/repos/actions/starter-workflows/contents/{$categorie}"
         );
 
@@ -256,7 +229,6 @@ class ApiWorkflowController extends Controller
 
     /**
      * Retourne le contenu YAML d'un template spécifique.
-     *
      * GET /api/workflows/templates/{fichier}
      */
     public function templateContenu(Request $request, string $fichier): JsonResponse
@@ -276,7 +248,7 @@ class ApiWorkflowController extends Controller
             $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
         }
 
-        $token = $request->user()?->token_outil_cicd;
+        $token = $this->githubToken();
         if ($token) {
             $http = $http->withToken($token);
         }
@@ -286,15 +258,11 @@ class ApiWorkflowController extends Controller
         );
 
         if ($response->status() === 404) {
-            return response()->json([
-                'message' => "Template introuvable : {$fichier}",
-            ], 404);
+            return response()->json(['message' => "Template introuvable : {$fichier}"], 404);
         }
 
         if (! $response->successful()) {
-            return response()->json([
-                'message' => 'Impossible de récupérer le contenu du template.',
-            ], $response->status());
+            return response()->json(['message' => 'Impossible de récupérer le contenu du template.'], $response->status());
         }
 
         return response()->json([
@@ -304,9 +272,119 @@ class ApiWorkflowController extends Controller
     }
 
     /**
+     * Retourne les artifacts d'une exécution spécifique.
+     * GET /api/projets/{id}/workflows/runs/{runId}/artifacts
+     */
+    public function artifacts(Request $request, int $id, int $runId): JsonResponse
+    {
+        $projet = Projet::findOrFail($id);
+
+        if (! $this->verifierAcces($request, $projet)) {
+            return response()->json(['message' => 'Accès refusé.'], 403);
+        }
+
+        if ($request->user()->role !== 'administrateur') {
+            return response()->json(['message' => 'Accès refusé. Réservé aux administrateurs.'], 403);
+        }
+
+        if (! $projet->url_depot) {
+            return response()->json(['message' => 'Ce projet n\'est pas lié à un dépôt GitHub.'], 422);
+        }
+
+        if (! $this->githubToken()) {
+            return response()->json(['message' => 'GITHUB_TOKEN non configuré dans .env.'], 500);
+        }
+
+        try {
+            [$owner, $repo] = $this->parseDepotUrl($projet->url_depot);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $response = $this->githubHttp()->get(
+            "https://api.github.com/repos/{$owner}/{$repo}/actions/runs/{$runId}/artifacts"
+        );
+
+        if ($response->status() === 401) {
+            return response()->json(['message' => 'Token GitHub invalide ou expiré.'], 401);
+        }
+
+        if (! $response->successful()) {
+            return response()->json([
+                'message' => 'Erreur GitHub.',
+                'details' => $response->json('message'),
+            ], $response->status());
+        }
+
+        $data      = $response->json();
+        $artifacts = collect($data['artifacts'] ?? [])->map(fn ($a) => [
+            'id'         => $a['id'],
+            'nom'        => $a['name'],
+            'taille'     => $a['size_in_bytes'],
+            'expire_at'  => $a['expires_at'],
+            'created_at' => $a['created_at'],
+            'expired'    => $a['expired'],
+        ])->values();
+
+        return response()->json([
+            'run_id'    => $runId,
+            'total'     => $data['total_count'] ?? count($artifacts),
+            'artifacts' => $artifacts,
+        ]);
+    }
+
+    /**
+     * Génère une URL de téléchargement signée pour un artifact.
+     * GET /api/projets/{id}/workflows/artifacts/{artifactId}/download
+     */
+    public function downloadArtifact(Request $request, int $id, int $artifactId): JsonResponse
+    {
+        $projet = Projet::findOrFail($id);
+
+        if (! $this->verifierAcces($request, $projet)) {
+            return response()->json(['message' => 'Accès refusé.'], 403);
+        }
+
+        if ($request->user()->role !== 'administrateur') {
+            return response()->json(['message' => 'Accès refusé. Réservé aux administrateurs.'], 403);
+        }
+
+        if (! $this->githubToken()) {
+            return response()->json(['message' => 'GITHUB_TOKEN non configuré dans .env.'], 500);
+        }
+
+        try {
+            [$owner, $repo] = $this->parseDepotUrl($projet->url_depot);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $http = $this->githubHttp()->withoutRedirecting();
+
+        $response = $http->get(
+            "https://api.github.com/repos/{$owner}/{$repo}/actions/artifacts/{$artifactId}/zip"
+        );
+
+        if ($response->status() === 302) {
+            return response()->json(['download_url' => $response->header('Location')]);
+        }
+
+        if ($response->status() === 401) {
+            return response()->json(['message' => 'Token GitHub invalide ou expiré.'], 401);
+        }
+
+        if ($response->status() === 410) {
+            return response()->json(['message' => 'Cet artifact a expiré et n\'est plus disponible.'], 410);
+        }
+
+        return response()->json([
+            'message' => 'Impossible de récupérer le lien de téléchargement.',
+            'details' => $response->json('message'),
+        ], $response->status());
+    }
+
+    /**
      * Crée un workflow dans le dépôt GitHub depuis un template YAML.
-     * Si le fichier existe déjà, il est mis à jour (nécessite le SHA).
-     *
      * POST /api/projets/{id}/workflows/depuis-template
      */
     public function depuisTemplate(Request $request, int $id): JsonResponse
@@ -318,18 +396,11 @@ class ApiWorkflowController extends Controller
         }
 
         if (! $projet->url_depot) {
-            return response()->json([
-                'message' => 'Ce projet n\'a pas de dépôt GitHub lié.',
-            ], 422);
+            return response()->json(['message' => 'Ce projet n\'a pas de dépôt GitHub lié.'], 422);
         }
 
-        $user  = $request->user();
-        $token = $user->token_outil_cicd;
-
-        if (! $token) {
-            return response()->json([
-                'message' => 'Token GitHub non configuré. Connectez GitHub depuis le projet.',
-            ], 422);
+        if (! $this->githubToken()) {
+            return response()->json(['message' => 'GITHUB_TOKEN non configuré dans .env.'], 500);
         }
 
         $request->validate([
@@ -349,19 +420,9 @@ class ApiWorkflowController extends Controller
         $path         = ".github/workflows/{$workflowName}";
         $content      = base64_encode($request->yaml_content);
 
-        $http = Http::withToken($token)
-                    ->withHeaders([
-                        'Accept'               => 'application/vnd.github+json',
-                        'X-GitHub-Api-Version' => '2022-11-28',
-                    ])
-                    ->timeout(30);
-
-        if (env('HTTPS_PROXY')) {
-            $http = $http->withOptions(['proxy' => env('HTTPS_PROXY')]);
-        }
+        $http = $this->githubHttp();
 
         // Vérifie si le fichier existe déjà pour récupérer son SHA
-        // (GitHub exige le SHA pour mettre à jour un fichier existant)
         $sha      = null;
         $existing = $http->get(
             "https://api.github.com/repos/{$owner}/{$repo}/contents/{$path}",
@@ -372,28 +433,23 @@ class ApiWorkflowController extends Controller
             $sha = $existing->json('sha');
         }
 
-        // Prépare le payload
         $payload = [
-            'message' => "ci: add {$workflowName} workflow",
+            'message' => $sha ? "ci: update {$workflowName} workflow" : "ci: add {$workflowName} workflow",
             'content' => $content,
             'branch'  => $branch,
         ];
 
         if ($sha) {
-            $payload['sha']     = $sha;
-            $payload['message'] = "ci: update {$workflowName} workflow";
+            $payload['sha'] = $sha;
         }
 
-        // Crée ou met à jour le fichier dans le dépôt
         $response = $http->put(
             "https://api.github.com/repos/{$owner}/{$repo}/contents/{$path}",
             $payload
         );
 
         if ($response->status() === 401) {
-            return response()->json([
-                'message' => 'Token GitHub invalide ou expiré. Veuillez reconnecter votre compte GitHub.',
-            ], 401);
+            return response()->json(['message' => 'Token GitHub invalide ou expiré.'], 401);
         }
 
         if (! $response->successful()) {
