@@ -80,9 +80,9 @@ class ApiWorkflowController extends Controller
      * Synchronise et retourne tous les workflows du dépôt GitHub lié.
      * POST /api/projets/{id}/workflows/sync
      */
-    public function sync(Request $request, int $id): JsonResponse
+    public function sync(Request $request, string $id): JsonResponse
     {
-        $projet = Projet::findOrFail($id);
+        $projet = Projet::findOrFail((int) $id);
 
         if (! $this->verifierAcces($request, $projet)) {
             return response()->json(['message' => 'Accès refusé.'], 403);
@@ -141,9 +141,9 @@ class ApiWorkflowController extends Controller
      * Retourne les exécutions d'un workflow spécifique.
      * GET /api/projets/{id}/workflows/{workflowId}/runs
      */
-    public function runs(Request $request, int $id, int $workflowId): JsonResponse
+    public function runs(Request $request, string $id, string $workflowId): JsonResponse
     {
-        $projet = Projet::findOrFail($id);
+        $projet = Projet::findOrFail((int) $id);
 
         if (! $this->verifierAcces($request, $projet)) {
             return response()->json(['message' => 'Accès refusé.'], 403);
@@ -276,9 +276,9 @@ class ApiWorkflowController extends Controller
      * Retourne les artifacts d'une exécution spécifique.
      * GET /api/projets/{id}/workflows/runs/{runId}/artifacts
      */
-    public function artifacts(Request $request, int $id, int $runId): JsonResponse
+    public function artifacts(Request $request, string $id, string $runId): JsonResponse
     {
-        $projet = Projet::findOrFail($id);
+        $projet = Projet::findOrFail((int) $id);
 
         if (! $this->verifierAcces($request, $projet)) {
             return response()->json(['message' => 'Accès refusé.'], 403);
@@ -338,9 +338,9 @@ class ApiWorkflowController extends Controller
      * Génère une URL de téléchargement signée pour un artifact.
      * GET /api/projets/{id}/workflows/artifacts/{artifactId}/download
      */
-    public function downloadArtifact(Request $request, int $id, int $artifactId): JsonResponse
+    public function downloadArtifact(Request $request, string $id, string $artifactId): JsonResponse
     {
-        $projet = Projet::findOrFail($id);
+        $projet = Projet::findOrFail((int) $id);
 
         if (! $this->verifierAcces($request, $projet)) {
             return response()->json(['message' => 'Accès refusé.'], 403);
@@ -388,9 +388,9 @@ class ApiWorkflowController extends Controller
      * Crée un workflow dans le dépôt GitHub depuis un template YAML.
      * POST /api/projets/{id}/workflows/depuis-template
      */
-    public function depuisTemplate(Request $request, int $id): JsonResponse
+    public function depuisTemplate(Request $request, string $id): JsonResponse
     {
-        $projet = Projet::findOrFail($id);
+        $projet = Projet::findOrFail((int) $id);
 
         if (! $this->verifierAcces($request, $projet)) {
             return response()->json(['message' => 'Accès refusé.'], 403);

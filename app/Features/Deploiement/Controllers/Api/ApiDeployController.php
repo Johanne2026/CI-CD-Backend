@@ -26,13 +26,22 @@ class ApiDeployController extends Controller
     // -------------------------------------------------------------------------
 
     /**
-     * Reçoit le .zip, lit deploy.meta.json, envoie à la VM et retourne le deploiement_id.
+     * Reçoit le .zip, lit deploy.meta.json, envoie à la VM et crée l'entrée en BD.
+     *
      * Rôle requis : administrateur_cloud_doi
-     * Body : multipart/form-data — champ "zip" (.zip, max 500 Mo)
+     *
+     * Body multipart/form-data :
+     *   zip           : fichier .zip (obligatoire)
+     *   ci_run_id     : ID du run GitHub Actions CI (optionnel)
+     *   commit_hash   : SHA du commit déployé (optionnel)
+     *   branche       : branche déployée (optionnel)
+     *   package_hash  : hash de l'artifact CI (optionnel)
+     *   nom_package   : nom du package artifact (optionnel)
+     *   declenche_par : ID de l'utilisateur qui a déclenché le CI (optionnel)
      */
     public function uploadZip(Request $request, int $id): JsonResponse
     {
-        set_time_limit(1800); // 30 minutes
+        set_time_limit(1800);
 
         $projet = Projet::findOrFail($id);
 
@@ -45,7 +54,13 @@ class ApiDeployController extends Controller
         }
 
         $request->validate([
-            'zip' => ['required', 'file', 'mimes:zip', 'max:512000'],
+            'zip'           => ['required', 'file', 'mimes:zip', 'max:512000'],
+            'ci_run_id'     => ['sometimes', 'nullable', 'integer'],
+            'commit_hash'   => ['sometimes', 'nullable', 'string', 'max:40'],
+            'branche'       => ['sometimes', 'nullable', 'string', 'max:255'],
+            'package_hash'  => ['sometimes', 'nullable', 'string', 'max:64'],
+            'nom_package'   => ['sometimes', 'nullable', 'string', 'max:255'],
+            'declenche_par' => ['sometimes', 'nullable', 'integer', 'exists:Utilisateurs,id'],
         ]);
 
         $fichierZip = $request->file('zip');
@@ -60,8 +75,13 @@ class ApiDeployController extends Controller
             ], 422);
         }
 
-        $app     = $meta['application']['name']    ?? $meta['app']     ?? null;
-        $version = $meta['application']['version'] ?? $meta['version'] ?? null;
+        // Extraire les champs depuis deploy.meta.json
+        $app          = $meta['application']['name']    ?? $meta['app']     ?? null;
+        $version      = $meta['application']['version'] ?? $meta['version'] ?? null;
+        $deploymentId = $meta['deployment_id']          ?? null;
+        $environnement = $meta['deployment']['environment']
+                      ?? $meta['environment']
+                      ?? 'PPR';
 
         if (! $app || ! $version) {
             return response()->json([
@@ -73,7 +93,7 @@ class ApiDeployController extends Controller
             return response()->json(['message' => 'DEPLOY_VM_URL non configuré dans .env.'], 500);
         }
 
-        // Envoyer le .zip à la VM en body brut (application/octet-stream)
+        // Envoyer le .zip à la VM
         $reponseUpload = Http::timeout(1800)
             ->withHeaders([
                 'X-App-Name'   => $app,
@@ -88,13 +108,39 @@ class ApiDeployController extends Controller
             ], 502);
         }
 
-        // Enregistrer en base (statut = en_attente)
+        // Créer l'entrée en base avec tous les champs disponibles
         $deploiement = Deploiement::create([
-            'projet_id' => $projet->id,
-            'lance_par' => $request->user()->id,
-            'app'       => $app,
-            'version'   => $version,
-            'statut'    => 'en_attente',
+            // Identifiants
+            'deployment_id'           => $deploymentId ?? "deploy_{$request->input('ci_run_id', uniqid())}",
+            'ci_run_id'               => $request->input('ci_run_id'),
+            'projet_id'               => $projet->id,
+
+            // Infos projet
+            'nom_projet'              => $projet->nom,
+            'version_projet'          => $version,
+            'commit_hash'             => $request->input('commit_hash'),
+            'branche'                 => $request->input('branche'),
+            'environnement'           => $environnement,
+
+            // Statuts initiaux
+            'final_statut'            => 'EN_ATTENTE',
+            'ci_statut'               => 'SUCCES',    // l'upload implique que le CI a réussi
+            'cd_statut'               => 'EN_ATTENTE',
+
+            // Package
+            'package_hash'            => $request->input('package_hash'),
+            'nom_package'             => $request->input('nom_package') ?? $fichierZip->getClientOriginalName(),
+
+            // Acteurs
+            'declenche_par'           => $request->input('declenche_par'),
+            'deploye_sur_serveur_par' => $request->user()->id,
+
+            // Compatibilité
+            'app'                     => $app,
+            'version'                 => $version,
+
+            // Timing — commence quand le CD démarre, pas maintenant
+            'commence_a'              => now(),
         ]);
 
         return response()->json([
@@ -110,16 +156,14 @@ class ApiDeployController extends Controller
     // -------------------------------------------------------------------------
 
     /**
-     * Appelle /deploy sur la VM de façon SYNCHRONE — attend la fin de deploy.ps1.
-     * La VM répond quand deploy.ps1 est terminé avec { statut, logs }.
-     * Laravel met à jour la BD et retourne le résultat final au frontend.
-     * Pas de polling nécessaire.
+     * Appelle /deploy sur la VM de façon synchrone.
+     * Met à jour tous les champs de suivi à la fin.
      *
      * Rôle requis : administrateur_cloud_doi
      */
     public function lancerDeploi(Request $request, int $id): JsonResponse
     {
-        set_time_limit(1800); // 30 minutes
+        set_time_limit(1800);
 
         $deploiement = Deploiement::findOrFail($id);
 
@@ -127,21 +171,27 @@ class ApiDeployController extends Controller
             return response()->json(['message' => 'Accès refusé.'], 403);
         }
 
-        if ($deploiement->statut !== 'en_attente') {
+        if ($deploiement->final_statut !== 'EN_ATTENTE') {
             return response()->json([
-                'message' => "Ce déploiement est déjà en statut \"{$deploiement->statut}\".",
+                'message' => "Ce déploiement est déjà en statut \"{$deploiement->final_statut}\".",
             ], 422);
         }
 
         if ($this->vmUrl === '') {
-            $deploiement->update(['statut' => 'echoue', 'logs' => 'DEPLOY_VM_URL non configuré.']);
+            $deploiement->update(['cd_statut' => 'ECHEC', 'logs' => 'DEPLOY_VM_URL non configuré.']);
+            $deploiement->recalculerFinalStatut();
             return response()->json(['message' => 'DEPLOY_VM_URL non configuré dans .env.'], 500);
         }
 
-        $deploiement->update(['statut' => 'en_cours']);
+        // Marquer le CD comme en cours et enregistrer qui le lance
+        $deploiement->update([
+            'cd_statut'               => 'EN_COURS',
+            'deploye_sur_serveur_par' => $request->user()->id,
+        ]);
+
+        $debutCD = now();
 
         try {
-            // Timeout 30 min — attend que deploy.ps1 termine complètement
             $reponseVm = Http::timeout(1800)->post(rtrim($this->vmUrl, '/') . '/deploy', [
                 'app'  => $deploiement->app,
                 'user' => $request->user()->nom . ' ' . $request->user()->prenom,
@@ -150,36 +200,51 @@ class ApiDeployController extends Controller
             Log::info('VM /deploy réponse', [
                 'deploiement_id' => $deploiement->id,
                 'status'         => $reponseVm->status(),
-                'body'           => substr($reponseVm->body(), 0, 500),
             ]);
 
-            $data   = $reponseVm->json();
-            $statut = $data['statut'] ?? ($reponseVm->successful() ? 'termine' : 'echoue');
-            $logs   = $data['logs']   ?? $reponseVm->body();
+            $data      = $reponseVm->json();
+            $cdStatut  = $reponseVm->successful() ? 'SUCCES' : 'ECHEC';
+            $logs      = $data['logs'] ?? $reponseVm->body();
+            $cdRunId   = $data['cd_run_id'] ?? $data['run_id'] ?? null;
+            $finAt     = now();
 
-            $deploiement->update(['statut' => $statut, 'logs' => $logs]);
+            $deploiement->update([
+                'cd_statut'  => $cdStatut,
+                'cd_run_id'  => $cdRunId,
+                'logs'       => $logs,
+                'fini_a'     => $finAt,
+                'duree'      => $deploiement->commence_a
+                    ? (int) $deploiement->commence_a->diffInSeconds($finAt)
+                    : (int) $debutCD->diffInSeconds($finAt),
+            ]);
+            $deploiement->recalculerFinalStatut();
 
-            $message = $statut === 'termine'
+            $message = $cdStatut === 'SUCCES'
                 ? "✅ Déploiement de \"{$deploiement->app}\" terminé avec succès."
                 : "❌ Déploiement de \"{$deploiement->app}\" échoué.";
 
             return response()->json([
                 'message'        => $message,
                 'deploiement_id' => $deploiement->id,
-                'statut'         => $statut,
+                'statut'         => $cdStatut,
                 'logs'           => $logs,
             ]);
 
         } catch (\Exception $e) {
             $deploiement->update([
-                'statut' => 'echoue',
-                'logs'   => "Connexion à la VM impossible : {$e->getMessage()}",
+                'cd_statut' => 'ECHEC',
+                'logs'      => "Connexion à la VM impossible : {$e->getMessage()}",
+                'fini_a'    => now(),
+                'duree'     => $deploiement->commence_a
+                    ? (int) $deploiement->commence_a->diffInSeconds(now())
+                    : null,
             ]);
+            $deploiement->recalculerFinalStatut();
 
             return response()->json([
                 'message'        => "Impossible de joindre la VM : {$e->getMessage()}",
                 'deploiement_id' => $deploiement->id,
-                'statut'         => 'echoue',
+                'statut'         => 'ECHEC',
             ], 502);
         }
     }
@@ -189,17 +254,38 @@ class ApiDeployController extends Controller
     // -------------------------------------------------------------------------
 
     /**
-     * Lecture directe du statut et des logs en base.
-     * Utile pour revoir un déploiement passé.
+     * Retourne tous les champs du déploiement pour affichage.
      */
     public function getLogs(int $id): JsonResponse
     {
-        $deploiement = Deploiement::findOrFail($id);
+        $deploiement = Deploiement::with(['declenchePar', 'deployeSurServeurPar', 'projet'])
+            ->findOrFail($id);
 
         return response()->json([
-            'deploiement_id' => $deploiement->id,
-            'statut'         => $deploiement->statut,
-            'logs'           => $deploiement->logs ?? '',
+            'deploiement_id'          => $deploiement->id,
+            'deployment_id'           => $deploiement->deployment_id,
+            'ci_run_id'               => $deploiement->ci_run_id,
+            'cd_run_id'               => $deploiement->cd_run_id,
+            'nom_projet'              => $deploiement->nom_projet,
+            'version_projet'          => $deploiement->version_projet,
+            'commit_hash'             => $deploiement->commit_hash,
+            'branche'                 => $deploiement->branche,
+            'environnement'           => $deploiement->environnement,
+            'final_statut'            => $deploiement->final_statut,
+            'ci_statut'               => $deploiement->ci_statut,
+            'cd_statut'               => $deploiement->cd_statut,
+            'package_hash'            => $deploiement->package_hash,
+            'nom_package'             => $deploiement->nom_package,
+            'logs'                    => $deploiement->logs ?? '',
+            'commence_a'              => $deploiement->commence_a,
+            'fini_a'                  => $deploiement->fini_a,
+            'duree'                   => $deploiement->duree,
+            'declenche_par'           => $deploiement->declenchePar
+                ? $deploiement->declenchePar->nom . ' ' . $deploiement->declenchePar->prenom
+                : null,
+            'deploye_sur_serveur_par' => $deploiement->deployeSurServeurPar
+                ? $deploiement->deployeSurServeurPar->nom . ' ' . $deploiement->deployeSurServeurPar->prenom
+                : null,
         ]);
     }
 
@@ -209,7 +295,7 @@ class ApiDeployController extends Controller
 
     /**
      * Lit deploy.meta.json dans un .zip sans extraire les fichiers.
-     * Cherche à la racine, dans un sous-dossier, ou dans un zip imbriqué (zip dans zip).
+     * Cherche à la racine, dans un sous-dossier, ou dans un zip imbriqué.
      */
     private function lireMetaDepuisZip(string $zipPath): ?array
     {
@@ -219,16 +305,13 @@ class ApiDeployController extends Controller
             return null;
         }
 
-        // Tentative 1 : deploy.meta.json à la racine
         $contenu = $zip->getFromName('deploy.meta.json');
 
-        // Tentative 2 : dans un sous-dossier portant le nom du zip
         if ($contenu === false) {
             $nomSansZip = pathinfo($zipPath, PATHINFO_FILENAME);
             $contenu    = $zip->getFromName($nomSansZip . '/deploy.meta.json');
         }
 
-        // Tentative 3 : parcourir toutes les entrées
         if ($contenu === false) {
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $stat = $zip->statIndex($i);
@@ -239,25 +322,20 @@ class ApiDeployController extends Controller
             }
         }
 
-        // Tentative 4 : zip imbriqué — chercher un .zip dans le zip et l'inspecter récursivement
         if ($contenu === false) {
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $stat = $zip->statIndex($i);
                 if (! $stat || ! str_ends_with(strtolower($stat['name']), '.zip')) {
                     continue;
                 }
-
                 $zipInterneContenu = $zip->getFromIndex($i);
                 if ($zipInterneContenu === false) {
                     continue;
                 }
-
                 $tmpPath = tempnam(sys_get_temp_dir(), 'deploy_inner_') . '.zip';
                 file_put_contents($tmpPath, $zipInterneContenu);
-
                 $metaInterne = $this->lireMetaDepuisZip($tmpPath);
                 unlink($tmpPath);
-
                 if ($metaInterne !== null) {
                     $zip->close();
                     return $metaInterne;

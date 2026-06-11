@@ -3,6 +3,7 @@
 use App\Features\Auth\Controllers\Api\ApiAuthController;
 use App\Features\Auth\Controllers\Api\ApiUserController;
 use App\Features\Deploiement\Controllers\Api\ApiDeployController;
+use App\Features\Deploiement\Controllers\Api\ApiPipelineLogController;
 use App\Features\Equipes\Controllers\Api\ApiEquipeController;
 use App\Features\Notifications\Controllers\Api\ApiNotificationController;
 use App\Features\Projets\Controllers\Api\ApiProjetController;
@@ -80,6 +81,10 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/deploiements/{id}/lancer',   [ApiDeployController::class, 'lancerDeploi']);
     // Déploiements — Relecture des logs en BD
     Route::get('/deploiements/{id}/logs',      [ApiDeployController::class, 'getLogs']);
+
+    // Logs Pipeline CI+CD unifiés
+    Route::get('/projets/{id}/pipelines/{runId}/logs',          [ApiPipelineLogController::class, 'logs']);
+    Route::get('/projets/{id}/pipelines/{runId}/logs/download', [ApiPipelineLogController::class, 'download']);
 
     // Notifications
     Route::get('/notifications',                        [ApiNotificationController::class, 'index']);
