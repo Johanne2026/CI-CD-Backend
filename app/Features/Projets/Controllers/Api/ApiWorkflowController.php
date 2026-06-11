@@ -2,8 +2,11 @@
 
 namespace App\Features\Projets\Controllers\Api;
 
-use App\Features\Projets\Models\Projet;
+use App\Features\Auth\Models\User;
 use App\Features\Equipes\Models\MembreEquipe;
+use App\Features\Notifications\Services\NotificationService;
+use App\Features\Projets\Models\PipelinePret;
+use App\Features\Projets\Models\Projet;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -468,6 +471,115 @@ class ApiWorkflowController extends Controller
             'url_github'    => "https://github.com/{$owner}/{$repo}/blob/{$branch}/{$path}",
             'workflow_name' => $workflowName,
             'branch'        => $branch,
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /api/projets/{id}/workflows/runs/{runId}/marquer-pret
+    // -------------------------------------------------------------------------
+
+    /**
+     * L'administrateur marque un run CI réussi comme "prêt à déployer".
+     * Crée une entrée dans pipeline_pret et envoie une notification
+     * à tous les utilisateurs administrateur_cloud_doi de l'équipe du projet.
+     *
+     * Rôle requis : administrateur
+     */
+    public function marquerPret(Request $request, string $projetId, string $runId): JsonResponse
+    {
+        $projet = Projet::findOrFail((int) $projetId);
+
+        if ($request->user()->role !== 'administrateur') {
+            return response()->json(['message' => 'Accès refusé. Réservé aux administrateurs.'], 403);
+        }
+
+        $request->validate([
+            'branche'       => ['sometimes', 'nullable', 'string', 'max:255'],
+            'commit_sha'    => ['sometimes', 'nullable', 'string', 'max:40'],
+            'nom_workflow'  => ['sometimes', 'nullable', 'string', 'max:255'],
+        ]);
+
+        // Marquer tout ancien "prêt" non déployé comme dépassé
+        PipelinePret::where('projet_id', $projet->id)
+            ->where('deploye', false)
+            ->update(['deploye' => true]);  // on le considère obsolète
+
+        // Créer le nouveau marquage
+        $pret = PipelinePret::create([
+            'projet_id'    => $projet->id,
+            'run_id'       => (int) $runId,
+            'branche'      => $request->input('branche'),
+            'commit_sha'   => $request->input('commit_sha'),
+            'nom_workflow' => $request->input('nom_workflow'),
+            'marque_par'   => $request->user()->id,
+            'deploye'      => false,
+        ]);
+
+        // Notifier tous les Cloud DOI membres de l'équipe du projet
+        $cloudDois = User::whereHas('equipes', function ($q) use ($projet) {
+            $q->where('Equipes.id', $projet->equipe_id);
+        })->where('role', 'administrateur_cloud_doi')->get();
+
+        $nomProjet = $projet->nom;
+        $branche   = $request->input('branche', 'inconnue');
+
+        foreach ($cloudDois as $cloudDoi) {
+            NotificationService::succes(
+                $cloudDoi->id,
+                "Pipeline CI réussi — {$nomProjet}",
+                "Le pipeline CI du projet \"{$nomProjet}\" (branche {$branche}) a réussi. " .
+                "L'application est prête à être déployée.",
+            );
+        }
+
+        return response()->json([
+            'message'       => "Run #{$runId} marqué prêt. {$cloudDois->count()} Cloud DOI notifié(s).",
+            'pipeline_pret' => $pret,
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /api/projets/{id}/pipeline-pret
+    // -------------------------------------------------------------------------
+
+    /**
+     * Retourne le dernier run marqué "prêt à déployer" et non encore déployé
+     * pour un projet donné.
+     * Utilisé par le frontend du Cloud DOI pour afficher/masquer le bouton "Déployer".
+     *
+     * Rôle requis : tous les utilisateurs connectés ayant accès au projet
+     */
+    public function pipelinePret(Request $request, string $projetId): JsonResponse
+    {
+        $projet = Projet::findOrFail((int) $projetId);
+
+        if (! $this->verifierAcces($request, $projet)) {
+            return response()->json(['message' => 'Accès refusé.'], 403);
+        }
+
+        $pret = PipelinePret::where('projet_id', $projet->id)
+            ->where('deploye', false)
+            ->with('marquePar:id,nom,prenom')
+            ->latest()
+            ->first();
+
+        if (! $pret) {
+            return response()->json(['pret' => false, 'pipeline' => null]);
+        }
+
+        return response()->json([
+            'pret'     => true,
+            'pipeline' => [
+                'id'           => $pret->id,
+                'run_id'       => $pret->run_id,
+                'branche'      => $pret->branche,
+                'commit_sha'   => $pret->commit_sha,
+                'nom_workflow' => $pret->nom_workflow,
+                'marque_par'   => $pret->marquePar
+                    ? $pret->marquePar->nom . ' ' . $pret->marquePar->prenom
+                    : null,
+                'created_at'   => $pret->created_at,
+            ],
         ]);
     }
 }

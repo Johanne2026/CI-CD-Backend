@@ -93,4 +93,8 @@ Route::middleware('auth:api')->group(function () {
     Route::delete('/notifications/lues',                [ApiNotificationController::class, 'supprimerLues']);
     Route::delete('/notifications/{id}',                [ApiNotificationController::class, 'destroy']);
 
+    // Notifications CI → CD (Option 3 — frontend polling)
+    Route::post('/projets/{id}/workflows/runs/{runId}/marquer-pret',  [ApiWorkflowController::class, 'marquerPret']);
+    Route::get('/projets/{id}/pipeline-pret',                          [ApiWorkflowController::class, 'pipelinePret']);
+
 });
