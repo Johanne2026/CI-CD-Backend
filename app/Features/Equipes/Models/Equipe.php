@@ -4,6 +4,7 @@ namespace App\Features\Equipes\Models;
 
 use App\Features\Auth\Models\User;
 use App\Features\Projets\Models\Projet;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Equipe extends Model
 {
+    use HasFactory;
     protected $table = 'Equipes';
 
     /**

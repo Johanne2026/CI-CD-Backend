@@ -1,0 +1,1146 @@
+openapi: 3.0.3
+info:
+  title: CI/CD Platform API
+  description: |
+    API REST du backend Laravel pour la plateforme CI/CD.
+
+    **Authentification** : Token Bearer via `Authorization: Bearer <token>`.
+    Obtenir le token via `POST /api/login`.
+
+    **Rôles** :
+    - `administrateur` — gestion complète
+    - `administrateur_cloud_doi` — déploiements CD
+    - `securite` — lecture seule
+  version: "1.0.0"
+servers:
+  - url: http://10.100.224.70:8000/api
+    description: Serveur de développement
+  - url: http://localhost:8000/api
+    description: Local
+security:
+  - BearerAuth: []
+tags:
+  - name: Auth
+  - name: Utilisateurs
+  - name: Équipes
+  - name: Projets
+  - name: Workflows
+  - name: Déploiements
+  - name: Logs
+  - name: Notifications
+  - name: Pipeline
+
+paths:
+
+  # ───── AUTH ─────────────────────────────────────────────
+  /register:
+    post:
+      tags: [Auth]
+      summary: Inscription
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [nom,prenom,email,mot_de_passe,mot_de_passe_confirmation,role]
+              properties:
+                nom:               {type: string, example: Emmy}
+                prenom:            {type: string, example: Admin}
+                email:             {type: string, format: email}
+                mot_de_passe:      {type: string, minLength: 8}
+                mot_de_passe_confirmation: {type: string}
+                role:              {type: string, enum: [administrateur,administrateur_cloud_doi,securite]}
+                username_outil_cicd: {type: string, nullable: true}
+      responses:
+        '201':
+          description: Inscription réussie
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '422': {description: Validation échouée}
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Connexion
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [email,mot_de_passe]
+              properties:
+                email:        {type: string, format: email}
+                mot_de_passe: {type: string}
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResponse'}
+        '422': {description: Identifiants invalides}
+
+  /logout:
+    post:
+      tags: [Auth]
+      summary: Déconnexion
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+
+  # ───── UTILISATEURS ──────────────────────────────────────
+  /user:
+    get:
+      tags: [Utilisateurs]
+      summary: Profil de l'utilisateur connecté
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+    put:
+      tags: [Utilisateurs]
+      summary: Mettre à jour son profil
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                nom:    {type: string}
+                prenom: {type: string}
+                mot_de_passe_actuel:               {type: string}
+                nouveau_mot_de_passe:              {type: string, minLength: 8}
+                nouveau_mot_de_passe_confirmation: {type: string}
+                username_outil_cicd: {type: string, nullable: true, description: Admin uniquement}
+                token_github:        {type: string, nullable: true, description: "Admin uniquement. Format: ghp_... ou ghs_..."}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '422': {description: Validation ou mot de passe incorrect}
+
+  /user/github-status:
+    get:
+      tags: [Utilisateurs]
+      summary: Statut des credentials GitHub de l'admin (sans exposer le token)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  a_username: {type: boolean}
+                  a_token:    {type: boolean}
+                  configure:  {type: boolean}
+                  username:   {type: string, nullable: true}
+        '403': {description: Non administrateur}
+
+  /utilisateurs:
+    get:
+      tags: [Utilisateurs]
+      summary: Liste tous les utilisateurs (admin)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/User'}
+    post:
+      tags: [Utilisateurs]
+      summary: Créer un utilisateur avec mot de passe temporaire (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [nom,prenom,email,role]
+              properties:
+                nom:    {type: string}
+                prenom: {type: string}
+                email:  {type: string, format: email}
+                role:   {type: string, enum: [administrateur_cloud_doi,securite]}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:                 {type: string}
+                  utilisateur:             {$ref: '#/components/schemas/User'}
+                  mot_de_passe_temporaire: {type: string}
+        '403': {description: Non administrateur}
+        '422': {description: Email déjà pris}
+
+  # ───── ÉQUIPES ───────────────────────────────────────────
+  /equipes:
+    get:
+      tags: [Équipes]
+      summary: Liste les équipes (filtrées selon le rôle)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Equipe'}
+    post:
+      tags: [Équipes]
+      summary: Créer une équipe (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [nom]
+              properties:
+                nom:         {type: string}
+                description: {type: string, nullable: true}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Equipe'}
+
+  /equipes/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Équipes]
+      summary: Détail d'une équipe
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Equipe'}
+        '403': {description: Non membre}
+    put:
+      tags: [Équipes]
+      summary: Modifier une équipe (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                nom:         {type: string}
+                description: {type: string, nullable: true}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Equipe'}
+    delete:
+      tags: [Équipes]
+      summary: Supprimer une équipe (admin)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+
+  /equipes/{id}/utilisateurs-disponibles:
+    get:
+      tags: [Équipes]
+      summary: Utilisateurs non encore membres de cette équipe (admin)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  properties:
+                    id:     {type: integer}
+                    nom:    {type: string}
+                    prenom: {type: string}
+                    role:   {type: string}
+
+  /equipes/{id}/membres:
+    post:
+      tags: [Équipes]
+      summary: Ajouter un membre à une équipe (admin)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [utilisateur_id]
+              properties:
+                utilisateur_id: {type: integer}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Equipe'}
+        '422': {description: Déjà membre}
+
+  /equipes/{id}/membres/{userId}:
+    delete:
+      tags: [Équipes]
+      summary: Retirer un membre d'une équipe (admin)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: userId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+        '422': {description: Le propriétaire ne peut pas être retiré}
+
+  # ───── PROJETS ───────────────────────────────────────────
+  /projets:
+    get:
+      tags: [Projets]
+      summary: Liste les projets actifs (filtrés selon le rôle)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Projet'}
+    post:
+      tags: [Projets]
+      summary: Créer un projet (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [equipe_id,nom]
+              properties:
+                equipe_id:            {type: integer}
+                nom:                  {type: string}
+                description:          {type: string, nullable: true}
+                stack_technologique:  {type: array, items: {type: string}}
+                duree_projet:         {type: string, nullable: true}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Projet'}
+
+  /projets/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [Projets]
+      summary: Détail d'un projet
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Projet'}
+        '403': {description: Non membre}
+    put:
+      tags: [Projets]
+      summary: Modifier un projet (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                nom:                 {type: string}
+                description:         {type: string, nullable: true}
+                stack_technologique: {type: array, items: {type: string}}
+                duree_projet:        {type: string, nullable: true}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Projet'}
+
+  /projets/{id}/archiver:
+    patch:
+      tags: [Projets]
+      summary: Archiver ou réactiver un projet (admin — bascule actif)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string, example: "Projet archivé."}
+                  projet:  {$ref: '#/components/schemas/Projet'}
+
+  /projets/{id}/connecter-depot:
+    post:
+      tags: [Projets]
+      summary: Lier un dépôt GitHub au projet (admin)
+      description: |
+        Si l'admin n'a pas encore configuré son username ou token GitHub,
+        ils doivent être fournis dans le body et seront sauvegardés.
+        Vérifier GET /user/github-status avant d'afficher ce formulaire.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [url_depot]
+              properties:
+                url_depot:           {type: string, format: uri, example: "https://github.com/org/repo"}
+                username_outil_cicd: {type: string, description: Requis si pas encore configuré sur le profil}
+                token_github:        {type: string, description: "Requis si pas encore configuré. Format: ghp_..."}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:                 {type: string}
+                  projet:                  {$ref: '#/components/schemas/Projet'}
+                  credentials_sauvegardes: {type: boolean}
+        '422':
+          description: Credentials GitHub manquants ou URL invalide
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:       {type: string}
+                  manque_github: {type: boolean}
+                  a_username:    {type: boolean}
+                  a_token:       {type: boolean}
+
+  # ───── WORKFLOWS ─────────────────────────────────────────
+  /workflows/templates:
+    get:
+      tags: [Workflows]
+      summary: Liste les templates GitHub Actions officiels
+      parameters:
+        - {name: categorie, in: query, schema: {type: string, default: ci}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  categorie:  {type: string}
+                  total:      {type: integer}
+                  templates:
+                    type: array
+                    items:
+                      properties:
+                        nom:          {type: string}
+                        fichier:      {type: string}
+                        url_github:   {type: string}
+                        download_url: {type: string}
+
+  /workflows/templates/{fichier}:
+    get:
+      tags: [Workflows]
+      summary: Contenu YAML d'un template
+      parameters:
+        - {name: fichier, in: path, required: true, schema: {type: string, example: laravel.yml}}
+        - {name: categorie, in: query, schema: {type: string, default: ci}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  fichier:      {type: string}
+                  yaml_content: {type: string}
+
+  /projets/{id}/workflows/sync:
+    post:
+      tags: [Workflows]
+      summary: Synchronise les workflows du dépôt GitHub lié
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  depot:     {type: string, example: "org/repo"}
+                  total:     {type: integer}
+                  workflows: {type: array, items: {$ref: '#/components/schemas/Workflow'}}
+        '422': {description: Projet sans dépôt GitHub lié}
+
+  /projets/{id}/workflows/depuis-template:
+    post:
+      tags: [Workflows]
+      summary: Créer ou mettre à jour un workflow depuis un template (admin)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [workflow_name,yaml_content]
+              properties:
+                workflow_name: {type: string, example: laravel.yml}
+                yaml_content:  {type: string}
+                branch:        {type: string, default: main}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:       {type: string}
+                  path:          {type: string}
+                  url_github:    {type: string}
+                  workflow_name: {type: string}
+                  branch:        {type: string}
+
+  /projets/{id}/workflows/{workflowId}/runs:
+    get:
+      tags: [Workflows]
+      summary: Liste les derniers runs d'un workflow
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: workflowId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  total: {type: integer}
+                  runs:
+                    type: array
+                    items: {$ref: '#/components/schemas/WorkflowRun'}
+
+  /projets/{id}/workflows/runs/{runId}/artifacts:
+    get:
+      tags: [Workflows]
+      summary: Liste les artifacts d'un run (admin)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: runId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  run_id:    {type: string}
+                  total:     {type: integer}
+                  artifacts:
+                    type: array
+                    items:
+                      properties:
+                        id:         {type: integer}
+                        nom:        {type: string}
+                        taille:     {type: integer}
+                        expire_at:  {type: string}
+                        expired:    {type: boolean}
+
+  /projets/{id}/workflows/artifacts/{artifactId}/download:
+    get:
+      tags: [Workflows]
+      summary: URL de téléchargement signée pour un artifact (admin)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: artifactId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  download_url: {type: string, format: uri}
+        '410': {description: Artifact expiré}
+
+  # ───── DÉPLOIEMENTS ──────────────────────────────────────
+  /deploiements:
+    get:
+      tags: [Déploiements]
+      summary: Liste tous les déploiements (filtrés par rôle)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/DeploiementListItem'}
+
+  /projets/{id}/enregistrer-run-ci:
+    post:
+      tags: [Déploiements]
+      summary: "Étape 0 — Enregistre un run CI terminé + importe ses logs"
+      description: |
+        Appelé par le frontend dès qu'il détecte un run GitHub Actions
+        avec statut "completed" (via polling). Idempotent.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [ci_run_id,ci_statut]
+              properties:
+                ci_run_id:    {type: integer, example: 27198809191}
+                ci_statut:    {type: string, enum: [SUCCES,ECHEC,EN_COURS]}
+                branche:      {type: string, example: main}
+                commit_hash:  {type: string, maxLength: 40}
+                nom_workflow: {type: string}
+                declenche_par: {type: integer, description: ID utilisateur}
+      responses:
+        '201':
+          description: Nouveau run enregistré
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:        {type: string}
+                  deploiement_id: {type: integer}
+                  existant:       {type: boolean, example: false}
+                  ci_statut:      {type: string}
+                  logs_importes:  {type: boolean}
+        '200':
+          description: Run déjà en BD — retourné sans doublon
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:        {type: string}
+                  deploiement_id: {type: integer}
+                  existant:       {type: boolean, example: true}
+                  ci_statut:      {type: string}
+
+  /projets/{id}/upload-zip:
+    post:
+      tags: [Déploiements]
+      summary: "Étape 1 — Upload du .zip artifact CI vers la VM (administrateur_cloud_doi)"
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              required: [zip]
+              properties:
+                zip:           {type: string, format: binary, description: Archive .zip avec deploy.meta.json — max 500 Mo}
+                ci_run_id:     {type: integer}
+                commit_hash:   {type: string, maxLength: 40}
+                branche:       {type: string}
+                package_hash:  {type: string, maxLength: 64}
+                nom_package:   {type: string}
+                declenche_par: {type: integer}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:        {type: string}
+                  deploiement_id: {type: integer}
+                  app:            {type: string}
+                  version:        {type: string}
+        '422': {description: .zip invalide ou deploy.meta.json absent}
+        '502': {description: VM inaccessible}
+
+  /deploiements/{id}/lancer:
+    post:
+      tags: [Déploiements]
+      summary: "Étape 2 — Lancer le déploiement CD (administrateur_cloud_doi)"
+      description: |
+        Appel synchrone — le backend attend la fin de deploy.ps1 (jusqu'à 30 min).
+        À la fin, envoie automatiquement des notifications à tous les membres de l'équipe.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:        {type: string}
+                  deploiement_id: {type: integer}
+                  statut:         {type: string, enum: [SUCCES,ECHEC]}
+                  logs:           {type: string}
+        '422': {description: Déploiement pas en statut EN_ATTENTE}
+        '500': {description: DEPLOY_VM_URL non configuré}
+        '502': {description: VM inaccessible}
+
+  /deploiements/{id}/logs:
+    get:
+      tags: [Déploiements]
+      summary: Détail complet d'un déploiement avec logs compilés CI et CD
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploiementDetail'}
+
+  # ───── LOGS ──────────────────────────────────────────────
+  /logs/cd:
+    post:
+      tags: [Logs]
+      summary: Reçoit un log CD depuis la VM (sans authentification)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [deployment_id,source,level,message]
+              properties:
+                deployment_id: {type: string, example: "ci_27198809191"}
+                source:        {type: string, enum: [CI,CD]}
+                level:         {type: string, enum: [INFO,WARNING,ERROR]}
+                step:          {type: string, example: DEPLOY}
+                message:       {type: string}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                properties:
+                  ok: {type: boolean}
+
+  /deploiements/{id}/logs-detail:
+    get:
+      tags: [Logs]
+      summary: Logs structurés ligne par ligne d'un déploiement
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: source, in: query, schema: {type: string, enum: [CI,CD]}}
+        - {name: niveau, in: query, schema: {type: string, enum: [INFO,WARNING,ERROR]}}
+        - {name: etape,  in: query, schema: {type: string, example: BUILD}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  deploiement_id: {type: integer}
+                  total:          {type: integer}
+                  logs:
+                    type: array
+                    items: {$ref: '#/components/schemas/LogEntry'}
+
+  /deploiements/{id}/importer-logs-ci:
+    post:
+      tags: [Logs]
+      summary: Import manuel des logs CI depuis GitHub (fallback si l'auto a échoué)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:        {type: string}
+                  deploiement_id: {type: integer}
+                  nb_inseres:     {type: integer}
+        '422': {description: ci_run_id absent sur le déploiement}
+        '500': {description: GITHUB_TOKEN manquant}
+        '502': {description: GitHub inaccessible}
+
+  /deploiements/{id}/logs-detail/download:
+    get:
+      tags: [Logs]
+      summary: Télécharger les logs d'un déploiement en fichier texte
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Fichier .log en téléchargement
+          headers:
+            Content-Disposition:
+              schema: {type: string, example: "attachment; filename=\"logs_deploiement_42.log\""}
+          content:
+            text/plain:
+              schema: {type: string}
+
+  /projets/{id}/pipelines/{runId}/logs:
+    get:
+      tags: [Logs]
+      summary: Logs CI + CD fusionnés pour un run GitHub Actions
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: runId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  run_id:            {type: integer}
+                  sections:
+                    type: array
+                    items:
+                      properties:
+                        source: {type: string, enum: [CI,CD]}
+                        job:    {type: string}
+                        lignes:
+                          type: array
+                          items:
+                            properties:
+                              timestamp: {type: string, nullable: true}
+                              texte:     {type: string}
+                  cd_statut:          {type: string, nullable: true}
+                  cd_deploiement_id:  {type: integer, nullable: true}
+
+  /projets/{id}/pipelines/{runId}/logs/download:
+    get:
+      tags: [Logs]
+      summary: Télécharger les logs pipeline CI+CD en fichier texte
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: runId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            text/plain:
+              schema: {type: string}
+
+  # ───── NOTIFICATIONS ─────────────────────────────────────
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: Liste les notifications de l'utilisateur connecté
+      parameters:
+        - {name: non_lues, in: query, schema: {type: integer, enum: [0,1]}, description: "1 = uniquement les non lues"}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  notifications:
+                    type: array
+                    items: {$ref: '#/components/schemas/Notification'}
+                  total:    {type: integer}
+                  non_lues: {type: integer}
+
+  /notifications/lire-toutes:
+    patch:
+      tags: [Notifications]
+      summary: Marquer toutes les notifications comme lues
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+                  count:   {type: integer}
+
+  /notifications/lues:
+    delete:
+      tags: [Notifications]
+      summary: Supprimer toutes les notifications lues
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+                  count:   {type: integer}
+
+  /notifications/{id}/lire:
+    patch:
+      tags: [Notifications]
+      summary: Marquer une notification comme lue
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+        '404': {description: Notification introuvable ou non autorisée}
+
+  /notifications/{id}:
+    delete:
+      tags: [Notifications]
+      summary: Supprimer une notification
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message: {type: string}
+
+  # ───── PIPELINE PRÊT ─────────────────────────────────────
+  /projets/{id}/workflows/runs/{runId}/marquer-pret:
+    post:
+      tags: [Pipeline]
+      summary: Marquer un run CI réussi comme prêt à déployer (admin)
+      description: |
+        Envoie automatiquement une notification à tous les
+        administrateur_cloud_doi membres de l'équipe du projet.
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+        - {name: runId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                branche:      {type: string}
+                commit_sha:   {type: string}
+                nom_workflow: {type: string}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:
+                    {type: string, example: "Run #27198809191 marqué prêt. 2 Cloud DOI notifié(s)."}
+                  pipeline_pret:
+                    properties:
+                      id:          {type: integer}
+                      projet_id:   {type: integer}
+                      run_id:      {type: integer}
+                      branche:     {type: string}
+                      commit_sha:  {type: string}
+                      deploye:     {type: boolean}
+        '403': {description: Non administrateur}
+
+  /projets/{id}/pipeline-pret:
+    get:
+      tags: [Pipeline]
+      summary: Vérifie si un pipeline est prêt à déployer pour ce projet
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  pret: {type: boolean}
+                  pipeline:
+                    nullable: true
+                    properties:
+                      id:           {type: integer}
+                      run_id:       {type: integer}
+                      branche:      {type: string, nullable: true}
+                      commit_sha:   {type: string, nullable: true}
+                      nom_workflow: {type: string, nullable: true}
+                      marque_par:   {type: string, nullable: true}
+                      created_at:   {type: string, format: date-time}
+
+
+# ═══════════════════════════════════════════════
+# COMPONENTS — SCHEMAS & SECURITY
+# ═══════════════════════════════════════════════
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Token SHA-256 obtenu via POST /api/login
+
+  schemas:
+
+    AuthResponse:
+      type: object
+      properties:
+        token:       {type: string}
+        redirect_to: {type: string, example: /dashboard/admin}
+        user:        {$ref: '#/components/schemas/User'}
+
+    User:
+      type: object
+      properties:
+        id:                        {type: integer}
+        nom:                       {type: string}
+        prenom:                    {type: string}
+        email:                     {type: string, format: email}
+        username_outil_cicd:       {type: string, nullable: true}
+        role:                      {type: string, enum: [administrateur,administrateur_cloud_doi,securite]}
+        doit_changer_mot_de_passe: {type: boolean}
+        date_inscription:          {type: string, format: date-time, nullable: true}
+        created_at:                {type: string, format: date-time}
+        updated_at:                {type: string, format: date-time}
+
+    Equipe:
+      type: object
+      properties:
+        id:               {type: integer}
+        proprietaire_id:  {type: integer}
+        nom:              {type: string}
+        description:      {type: string, nullable: true}
+        date_creation:    {type: string, format: date-time}
+        date_mise_a_jour: {type: string, format: date-time}
+        proprietaire:
+          properties:
+            id:     {type: integer}
+            nom:    {type: string}
+            prenom: {type: string}
+            email:  {type: string}
+        membres:
+          type: array
+          items:
+            properties:
+              id:     {type: integer}
+              nom:    {type: string}
+              prenom: {type: string}
+              email:  {type: string}
+              pivot:
+                properties:
+                  role:          {type: string, enum: [proprietaire,membre]}
+                  date_adhesion: {type: string, format: date-time}
+
+    Projet:
+      type: object
+      properties:
+        id:                   {type: integer}
+        equipe_id:            {type: integer}
+        cree_par_id:          {type: integer}
+        nom:                  {type: string}
+        description:          {type: string, nullable: true}
+        stack_technologique:  {type: array, items: {type: string}}
+        actif:                {type: boolean}
+        duree_projet:         {type: string, nullable: true}
+        url_depot:            {type: string, nullable: true}
+        lie_a_un_depot:       {type: boolean}
+        date_creation:        {type: string, format: date-time}
+        date_mise_a_jour:     {type: string, format: date-time}
+        equipe:
+          properties:
+            id:  {type: integer}
+            nom: {type: string}
+        cree_par:
+          properties:
+            id:     {type: integer}
+            nom:    {type: string}
+            prenom: {type: string}
+
+    Workflow:
+      type: object
+      properties:
+        id:         {type: integer}
+        nom:        {type: string}
+        fichier:    {type: string}
+        etat:       {type: string}
+        url_github: {type: string}
+        badge_url:  {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    WorkflowRun:
+      type: object
+      properties:
+        id:          {type: integer, example: 27198809191}
+        nom:         {type: string}
+        statut:      {type: string, enum: [completed,in_progress,queued]}
+        conclusion:  {type: string, nullable: true, enum: [success,failure,cancelled,skipped,null]}
+        branche:     {type: string}
+        commit_sha:  {type: string}
+        declencheur: {type: string}
+        url_github:  {type: string}
+        debut:       {type: string, format: date-time, nullable: true}
+        fin:         {type: string, format: date-time, nullable: true}
+
+    DeploiementListItem:
+      type: object
+      properties:
+        id:                      {type: integer}
+        deployment_id:           {type: string, nullable: true}
+        ci_run_id:               {type: integer, nullable: true}
+        cd_run_id:               {type: string, nullable: true}
+        nom_projet:              {type: string, nullable: true}
+        version_projet:          {type: string, nullable: true}
+        branche:                 {type: string, nullable: true}
+        commit_hash:             {type: string, nullable: true}
+        environnement:           {type: string}
+        final_statut:            {type: string, enum: [EN_ATTENTE,EN_COURS,SUCCES,ECHEC]}
+        ci_statut:               {type: string, enum: [EN_ATTENTE,EN_COURS,SUCCES,ECHEC]}
+        cd_statut:               {type: string, enum: [EN_ATTENTE,EN_COURS,SUCCES,ECHEC]}
+        package_hash:            {type: string, nullable: true}
+        nom_package:             {type: string, nullable: true}
+        commence_a:              {type: string, format: date-time, nullable: true}
+        fini_a:                  {type: string, format: date-time, nullable: true}
+        duree:                   {type: integer, nullable: true, description: En secondes}
+        created_at:              {type: string, format: date-time}
+        projet:
+          nullable: true
+          properties:
+            id:  {type: integer}
+            nom: {type: string}
+        declenche_par:
+          nullable: true
+          properties:
+            id:     {type: integer}
+            nom:    {type: string}
+            prenom: {type: string}
+        deploye_sur_serveur_par:
+          nullable: true
+          properties:
+            id:     {type: integer}
+            nom:    {type: string}
+            prenom: {type: string}
+
+    DeploiementDetail:
+      allOf:
+        - $ref: '#/components/schemas/DeploiementListItem'
+        - type: object
+          properties:
+            logs:
+              type: string
+              description: Logs CD compilés (lu depuis logs.contenu_cd WHERE source=CD AND etape=COMPILE)
+            logs_ci:
+              type: string
+              nullable: true
+              description: Logs CI compilés (lu depuis logs.contenu_ci WHERE source=CI AND etape=COMPILE)
+            declenche_par:
+              type: string
+              nullable: true
+              description: "Nom complet ex: Emmy Admin"
+            deploye_sur_serveur_par:
+              type: string
+              nullable: true
+
+    LogEntry:
+      type: object
+      description: Ligne individuelle de log (table log_details)
+      properties:
+        id:         {type: integer}
+        log_id:     {type: integer, description: FK vers logs.id (résumé du déploiement)}
+        source:     {type: string, enum: [CI,CD]}
+        niveau:     {type: string, enum: [INFO,WARNING,ERROR]}
+        etape:      {type: string, nullable: true}
+        message:    {type: string}
+        created_at: {type: string, format: date-time}
+
+    Notification:
+      type: object
+      properties:
+        id:             {type: integer}
+        utilisateur_id: {type: integer}
+        titre:          {type: string}
+        message:        {type: string}
+        type:           {type: string, enum: [info,succes,attention,erreur]}
+        est_lu:         {type: boolean}
+        date_creation:  {type: string, format: date-time}

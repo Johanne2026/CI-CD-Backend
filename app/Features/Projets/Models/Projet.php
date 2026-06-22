@@ -4,11 +4,13 @@ namespace App\Features\Projets\Models;
 
 use App\Features\Auth\Models\User;
 use App\Features\Equipes\Models\Equipe;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Projet extends Model
 {
+    use HasFactory;
     protected $table = 'Projets';
 
     public $timestamps = false;
@@ -22,7 +24,6 @@ class Projet extends Model
         'actif',
         'duree_projet',
         'url_depot',
-        'cle_deploiement',
     ];
 
     protected function casts(): array

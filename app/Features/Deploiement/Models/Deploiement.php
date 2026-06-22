@@ -4,11 +4,13 @@ namespace App\Features\Deploiement\Models;
 
 use App\Features\Auth\Models\User;
 use App\Features\Projets\Models\Projet;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Deploiement extends Model
 {
+    use HasFactory;
     protected $table = 'deploiements';
 
     protected $fillable = [
@@ -33,9 +35,6 @@ class Deploiement extends Model
         // Package
         'package_hash',
         'nom_package',
-
-        // Logs
-        'logs',
 
         // Timing
         'commence_a',

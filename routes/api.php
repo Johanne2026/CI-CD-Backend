@@ -3,8 +3,9 @@
 use App\Features\Auth\Controllers\Api\ApiAuthController;
 use App\Features\Auth\Controllers\Api\ApiUserController;
 use App\Features\Deploiement\Controllers\Api\ApiDeployController;
-use App\Features\Deploiement\Controllers\Api\ApiPipelineLogController;
 use App\Features\Equipes\Controllers\Api\ApiEquipeController;
+use App\Features\Logs\Controllers\Api\ApiLogController;
+use App\Features\Logs\Controllers\Api\ApiPipelineLogController;
 use App\Features\Notifications\Controllers\Api\ApiNotificationController;
 use App\Features\Projets\Controllers\Api\ApiProjetController;
 use App\Features\Projets\Controllers\Api\ApiWorkflowController;
@@ -16,6 +17,9 @@ Route::post('/login',    [ApiAuthController::class, 'login']);
 
 // Callback VM — supprimé, approche synchrone utilisée à la place
 
+// Logs CD en temps réel depuis deploy.ps1 — sans authentification
+Route::post('/logs/cd', [ApiLogController::class, 'recevoirLogCD']);
+
 // Preflight OPTIONS pour les requêtes multipart/form-data (upload .zip)
 Route::options('/projets/{id}/upload-zip', fn() => response()->json([], 200));
 
@@ -23,10 +27,12 @@ Route::options('/projets/{id}/upload-zip', fn() => response()->json([], 200));
 Route::middleware('auth:api')->group(function () {
 
     // Auth
-    Route::get('/user',         [ApiUserController::class, 'show']);
-    Route::get('/utilisateurs', [ApiUserController::class, 'index']);
-    Route::put('/user',         [ApiUserController::class, 'update']);
-    Route::post('/logout',      [ApiAuthController::class, 'logout']);
+    Route::get('/user',               [ApiUserController::class, 'show']);
+    Route::get('/user/github-status', [ApiUserController::class, 'githubStatus']); // [admin] statut credentials GitHub
+    Route::get('/utilisateurs',       [ApiUserController::class, 'index']);
+    Route::post('/utilisateurs',      [ApiUserController::class, 'creer']);
+    Route::put('/user',               [ApiUserController::class, 'update']);
+    Route::post('/logout',            [ApiAuthController::class, 'logout']);
 
     // Équipes — lecture (tous les utilisateurs connectés)
     Route::get('/equipes',       [ApiEquipeController::class, 'index']);
@@ -57,11 +63,6 @@ Route::middleware('auth:api')->group(function () {
     // Connexion GitHub d'un projet (tous les utilisateurs connectés)
     Route::post('/projets/{id}/connecter-depot',                   [ApiProjetController::class,  'connecterDepot']);
 
-    // Génération de clé de déploiement (administrateur uniquement)
-    Route::middleware('admin')->group(function () {
-        Route::post('/projets/{id}/generer-cle-deploiement',       [ApiProjetController::class, 'genererCleDeploiement']);
-    });
-
     // Templates GitHub Actions (tous les utilisateurs connectés)
     Route::get('/workflows/templates',                             [ApiWorkflowController::class, 'templates']);
     Route::get('/workflows/templates/{fichier}',                   [ApiWorkflowController::class, 'templateContenu']);
@@ -75,6 +76,14 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/projets/{id}/workflows/runs/{runId}/artifacts',              [ApiWorkflowController::class, 'artifacts']);
     Route::get('/projets/{id}/workflows/artifacts/{artifactId}/download',     [ApiWorkflowController::class, 'downloadArtifact']);
 
+    // Release assets — retourne les assets de la release GitHub liée au run (remplace artifacts expirés)
+    Route::get('/projets/{id}/workflows/runs/{runId}/release-assets',         [ApiWorkflowController::class, 'releaseAssets']);
+    Route::get('/projets/{id}/releases',                                       [ApiWorkflowController::class, 'releases']);
+
+    // Déploiements — liste et détail
+    Route::get('/deploiements',                            [ApiDeployController::class, 'liste']);
+    // Déploiements — Étape 0 : enregistrer un run CI terminé (polling frontend)
+    Route::post('/projets/{id}/enregistrer-run-ci',        [ApiDeployController::class, 'enregistrerRunCI']);
     // Déploiements — Étape 1 : upload du .zip vers la VM
     Route::post('/projets/{id}/upload-zip',    [ApiDeployController::class, 'uploadZip']);
     // Déploiements — Étape 2 : lancer deploy.ps1 (synchrone — attend la fin)
@@ -82,7 +91,12 @@ Route::middleware('auth:api')->group(function () {
     // Déploiements — Relecture des logs en BD
     Route::get('/deploiements/{id}/logs',      [ApiDeployController::class, 'getLogs']);
 
-    // Logs Pipeline CI+CD unifiés
+    // Logs structurés CI + CD
+    Route::get('/deploiements/{id}/logs-detail',          [ApiLogController::class, 'index']);
+    Route::post('/deploiements/{id}/importer-logs-ci',    [ApiLogController::class, 'importerLogsCI']);
+    Route::get('/deploiements/{id}/logs-detail/download', [ApiLogController::class, 'download']);
+
+    // Logs Pipeline CI+CD unifiés (vue fusionnée pour le frontend)
     Route::get('/projets/{id}/pipelines/{runId}/logs',          [ApiPipelineLogController::class, 'logs']);
     Route::get('/projets/{id}/pipelines/{runId}/logs/download', [ApiPipelineLogController::class, 'download']);
 

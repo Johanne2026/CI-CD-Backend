@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CI/CD Platform — API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; background: #fafafa; }
+    .topbar { background: #1a1a2e !important; }
+    .topbar-wrapper .link { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    // Charge le fichier openapi.yaml depuis le même dossier
+    // Si ce fichier HTML est ouvert via file://, utiliser fetch avec un serveur local.
+    // Commande pour démarrer un serveur minimal : php artisan serve
+    // puis ouvrir : http://localhost:8000/swagger-ui.html
+
+    const yamlUrl = window.location.href.includes('localhost')
+      ? '/openapi.yaml'           // via serveur Laravel
+      : './openapi.yaml';         // via fichier local (peut nécessiter CORS)
+
+    SwaggerUIBundle({
+      url: yamlUrl,
+      dom_id: '#swagger-ui',
+      presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIBundle.SwaggerUIStandalonePreset
+      ],
+      layout: 'BaseLayout',
+      deepLinking: true,
+      defaultModelsExpandDepth: 1,
+      defaultModelExpandDepth: 2,
+      displayRequestDuration: true,
+      filter: true,
+      tryItOutEnabled: true,
+      requestInterceptor: (req) => {
+        // Injecte automatiquement le token depuis localStorage si présent
+        const token = localStorage.getItem('token');
+        if (token && !req.headers['Authorization']) {
+          req.headers['Authorization'] = 'Bearer ' + token;
+        }
+        return req;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -28,21 +28,25 @@ class User extends Authenticatable
         'administrateur_cloud_doi' => 'Administrateur Cloud DOI',
         'securite'                 => 'Sécurité',
     ];
+    
 
     protected $fillable = [
         'nom',
         'prenom',
         'email',
         'username_outil_cicd',
+        'token_github',
         'mot_de_passe',
         'api_token',
         'date_inscription',
         'role',
+        'doit_changer_mot_de_passe',
     ];
 
     protected $hidden = [
         'mot_de_passe',
         'api_token',
+        'token_github',  // jamais exposé dans les réponses JSON
     ];
 
     /**
@@ -61,9 +65,28 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'mot_de_passe'     => 'hashed',
-            'date_inscription' => 'datetime',
+            'mot_de_passe'              => 'hashed',
+            'date_inscription'          => 'datetime',
+            'doit_changer_mot_de_passe' => 'boolean',
+            'token_github'              => 'encrypted',  // AES-256 via APP_KEY Laravel
         ];
+    }
+
+    /**
+     * Indique si l'admin a configuré ses credentials GitHub.
+     */
+    public function aConfigureGithub(): bool
+    {
+        return ! empty($this->username_outil_cicd) && ! empty($this->token_github);
+    }
+
+    /**
+     * Retourne le token GitHub à utiliser pour les appels API.
+     * Priorité : token personnel de l'admin → GITHUB_TOKEN .env
+     */
+    public function tokenGithubEffectif(): string
+    {
+        return $this->token_github ?? config('services.github.token', '');
     }
 
     /**
